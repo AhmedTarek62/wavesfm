@@ -11,36 +11,28 @@ A lightweight, public-friendly entrypoint for reproducing our multimodal fine-tu
 Dataset loaders live in `wavesfm/datasets.py` with clear names (`IqDataset`, `SensingDataset`, `PositioningDataset`, `RadioSignalDataset`, `RadComDataset`, `UwbDataset`).
 
 ## Preprocessing
-Use `wavesfm.preprocessing` to turn raw data into a single HDF5 file per split.
+Use the per-dataset scripts under `wavesfm/preprocessing/` to turn raw data into a single HDF5 file per split.
 
 Examples:
 ```bash
 # IQ tasks (amc/aoa/rml/rfp/deepbeam/interf)
-python - <<'PY'
-from wavesfm.preprocessing import preprocess_iq_task
-preprocess_iq_task("amc", data_path="data/raw_iq/train_shards", output="data/amc_train.h5")
-preprocess_iq_task("amc", data_path="data/raw_iq/val_shards", output="data/amc_val.h5")
-PY
+python wavesfm/preprocessing/preprocess_amc.py --data-path data/raw_iq/train_shards --output data/amc_train.h5
+python wavesfm/preprocessing/preprocess_amc.py --data-path data/raw_iq/val_shards --output data/amc_val.h5
 
 # CSI sensing
-from wavesfm.preprocessing import preprocess_sensing
-preprocess_sensing(data_path="data/sensing/raw/train", output="data/sensing_train.h5", overwrite=True)
+python wavesfm/preprocessing/preprocess_sensing.py --data-path data/sensing/raw/train --output data/sensing_train.h5 --overwrite
 
 # Radio signals (spectrograms)
-from wavesfm.preprocessing import preprocess_radio_signals
-preprocess_radio_signals(root_dir="data/rfs/raw", output="data/rfs_train.h5", overwrite=True)
+python wavesfm/preprocessing/preprocess_rfs.py --data-path data/rfs/raw --output data/rfs_train.h5 --overwrite
 
 # Positioning
-from wavesfm.preprocessing import preprocess_positioning
-preprocess_positioning(datapath="data/pos/raw/outdoor/train", output="data/pos_train.h5", scene="outdoor")
+python wavesfm/preprocessing/preprocess_pos.py --data-path data/pos/raw/outdoor/train --output data/pos_train.h5 --scene outdoor
 
 # RadCom OTA
-from wavesfm.preprocessing import preprocess_radcom_ota
-preprocess_radcom_ota(input_path="data/radcom/raw.h5", output="data/radcom_all.h5")
+python wavesfm/preprocessing/preprocess_radcom.py --input data/radcom/raw.h5 --output data/radcom_all.h5
 
 # UWB positioning
-from wavesfm.preprocessing import preprocess_uwb
-preprocess_uwb(root="data/uwb/raw", environment="indoor", output="data/uwb_train.h5", batch_size=64)
+python wavesfm/preprocessing/preprocess_uwb.py --root data/uwb/raw --environment indoor --output data/uwb_train.h5 --batch-size 64
 ```
 
 The IQ helper writes:
