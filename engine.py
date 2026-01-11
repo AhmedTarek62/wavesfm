@@ -34,6 +34,7 @@ def train_one_epoch(
     model.train()
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
+    mae_meter = AverageMeter()
 
     autocast_enabled = device.type == "cuda"
     total_steps = len(data_loader)
@@ -65,6 +66,9 @@ def train_one_epoch(
         if task_type == "classification":
             acc1, _ = accuracy(outputs, targets, topk=(1, min(3, outputs.shape[1])))
             acc_meter.update(acc1.item(), n=samples.size(0))
+        elif task_type == "regression":
+            mae = (outputs.squeeze() - targets.squeeze()).abs().mean().item()
+            mae_meter.update(mae, n=samples.size(0))
 
         if step % print_freq == 0 or step + 1 == total_steps:
             lr_now = optimizer.param_groups[0]["lr"]
@@ -76,6 +80,8 @@ def train_one_epoch(
             }
             if task_type == "classification":
                 msg["acc1"] = acc_meter.avg
+            if task_type == "regression":
+                msg["mae"] = mae_meter.avg
             print(pretty_dict(msg, prefix="[train] "))
 
         global_step += 1
@@ -83,6 +89,8 @@ def train_one_epoch(
     stats = {"loss": loss_meter.avg}
     if task_type == "classification":
         stats["acc1"] = acc_meter.avg
+    if task_type == "regression":
+        stats["mae"] = mae_meter.avg
     return stats
 
 
@@ -265,6 +273,40 @@ def evaluate_positioning(
     return stats
 
 
+@torch.no_grad()
+def evaluate_regression(
+    model: torch.nn.Module,
+    data_loader,
+    device: torch.device,
+    criterion: torch.nn.Module,
+) -> Dict[str, float]:
+    model.eval()
+    loss_meter = AverageMeter()
+    mae_meter = AverageMeter()
+    rmse_meter = AverageMeter()
+
+    autocast_enabled = device.type == "cuda"
+    for batch in data_loader:
+        samples, targets = _unpack_batch(batch)
+        samples = samples.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
+
+        with torch.autocast(device_type=device.type, enabled=autocast_enabled):
+            outputs = model(samples)
+            loss = criterion(outputs, targets)
+
+        loss_meter.update(loss.item(), n=samples.size(0))
+        err = (outputs.squeeze() - targets.squeeze())
+        mae = err.abs().mean().item()
+        rmse = (err.pow(2).mean().sqrt().item())
+        mae_meter.update(mae, n=samples.size(0))
+        rmse_meter.update(rmse, n=samples.size(0))
+
+    stats = {"loss": loss_meter.avg, "mae": mae_meter.avg, "rmse": rmse_meter.avg}
+    print(pretty_dict(stats, prefix="[val] "))
+    return stats
+
+
 def evaluate(
     model: torch.nn.Module,
     data_loader,
@@ -283,4 +325,6 @@ def evaluate(
     if task_type == "position":
         assert coord_min is not None and coord_max is not None, "coord_min/max required for position tasks"
         return evaluate_positioning(model, data_loader, device, criterion, coord_min, coord_max)
+    if task_type == "regression":
+        return evaluate_regression(model, data_loader, device, criterion)
     raise ValueError(f"Unknown task type: {task_type}")

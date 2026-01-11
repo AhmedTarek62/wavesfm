@@ -1,5 +1,5 @@
 """
-Lightweight, cache-first fine-tuning utilities for WavesFM.
+Lightweight HDF5-first fine-tuning utilities for WavesFM.
 """
 
 from wavesfm.data import build_datasets, SUPPORTED_TASKS, TaskInfo

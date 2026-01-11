@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Iterable, Tuple
 
 import h5py
 import numpy as np
@@ -11,12 +11,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 
-class CSISensingCache(Dataset):
-    """HDF5-backed CSI sensing tensors.
-
-    Expected datasets: `csi` (N, 3, H, W) and `label` (N,).
-    Optional attr `labels` stores label names.
-    """
+class SensingDataset(Dataset):
+    """CSI sensing tensors written by preprocessing scripts."""
 
     def __init__(self, h5_path: str | Path):
         self.h5_path = Path(h5_path)
@@ -26,13 +22,13 @@ class CSISensingCache(Dataset):
             labels_attr = h5.attrs.get("labels", None)
             self.labels = json.loads(labels_attr) if labels_attr else []
 
-    def _require_h5(self) -> h5py.File:
+    def _require(self) -> h5py.File:
         if self._h5 is None:
             self._h5 = h5py.File(self.h5_path, "r")
         return self._h5
 
     def __getitem__(self, index: int):
-        h5 = self._require_h5()
+        h5 = self._require()
         csi = torch.as_tensor(h5["csi"][index])
         label = torch.as_tensor(h5["label"][index], dtype=torch.long)
         return csi, label
@@ -48,12 +44,8 @@ class CSISensingCache(Dataset):
             pass
 
 
-class RadioSignalCache(Dataset):
-    """HDF5-backed radio spectrogram tensors.
-
-    Expected datasets: `image` (N, 1, H, W) and `label` (N,).
-    Attr `labels` optionally lists class names.
-    """
+class RadioSignalDataset(Dataset):
+    """Spectrogram-like radio signal tensors from preprocessing scripts."""
 
     def __init__(self, h5_path: str | Path):
         self.h5_path = Path(h5_path)
@@ -63,13 +55,13 @@ class RadioSignalCache(Dataset):
             labels_attr = h5.attrs.get("labels", None)
             self.labels = json.loads(labels_attr) if labels_attr else []
 
-    def _require_h5(self) -> h5py.File:
+    def _require(self) -> h5py.File:
         if self._h5 is None:
             self._h5 = h5py.File(self.h5_path, "r")
         return self._h5
 
     def __getitem__(self, index: int):
-        h5 = self._require_h5()
+        h5 = self._require()
         image = torch.as_tensor(h5["image"][index])
         label = torch.as_tensor(h5["label"][index], dtype=torch.long)
         return image, label
@@ -85,11 +77,8 @@ class RadioSignalCache(Dataset):
             pass
 
 
-class Positioning5GCache(Dataset):
-    """HDF5-backed 5G positioning dataset.
-
-    Expects datasets `features` and `label`, plus attrs with normalization metadata.
-    """
+class PositioningDataset(Dataset):
+    """5G positioning dataset with normalized targets."""
 
     def __init__(self, h5_path: str | Path):
         self.h5_path = Path(h5_path)
@@ -108,13 +97,13 @@ class Positioning5GCache(Dataset):
                 "coord_nominal_max": json.loads(h5.attrs.get("coord_nominal_max", "[]")),
             }
 
-    def _require_h5(self) -> h5py.File:
+    def _require(self) -> h5py.File:
         if self._h5 is None:
             self._h5 = h5py.File(self.h5_path, "r")
         return self._h5
 
     def __getitem__(self, index: int):
-        h5 = self._require_h5()
+        h5 = self._require()
         features = torch.as_tensor(h5["features"][index])
         label = torch.as_tensor(h5["label"][index])
         return features, label
@@ -143,14 +132,14 @@ RADCOM_OTA_LABELS: Tuple[Tuple[str, str], ...] = (
 )
 
 
-class RadComOtaCache(Dataset):
-    """Normalized RadCom OTA cache saved by `preprocess_radcom_ota.py`."""
+class RadComDataset(Dataset):
+    """Normalized RadCom OTA dataset created by preprocessing/preprocess_radcom_ota.py."""
 
     def __init__(
         self,
         h5_path: str | Path,
         normalize: bool = True,
-        stats: Dict[str, Iterable[float]] | None = None,
+        stats: dict | None = None,
         return_snr: bool = False,
     ):
         self.h5_path = str(h5_path)
@@ -171,14 +160,12 @@ class RadComOtaCache(Dataset):
                 mean_attr = f.attrs.get("mean")
                 std_attr = f.attrs.get("std")
                 if mean_attr is None or std_attr is None:
-                    raise KeyError("Missing mean/std attributes in cache; provide stats explicitly.")
+                    raise KeyError("Missing mean/std attributes in RadCom cache; provide stats explicitly.")
                 self.stats = {
                     "mean": np.asarray(mean_attr, dtype=np.float32),
                     "std": np.asarray(std_attr, dtype=np.float32),
                 }
             else:
-                if "mean" not in stats or "std" not in stats:
-                    raise KeyError("stats must contain 'mean' and 'std'.")
                 self.stats = {
                     "mean": np.asarray(stats["mean"], dtype=np.float32),
                     "std": np.asarray(stats["std"], dtype=np.float32),
@@ -223,8 +210,8 @@ class RadComOtaCache(Dataset):
         return x, label, snr_val
 
 
-class UWBLoc(Dataset):
-    """UWB positioning cache produced by `preprocess_uwb_loc.py`."""
+class UwbDataset(Dataset):
+    """UWB positioning dataset produced by preprocessing/preprocess_uwb_loc.py."""
 
     def __init__(self, h5_path: str | Path, return_channel: bool = False, as_complex: bool = False) -> None:
         self.h5_path = str(Path(h5_path).expanduser())
@@ -274,17 +261,13 @@ class UWBLoc(Dataset):
         cir[1] = (cir[1] - mean_imag) / std_imag
         if self.as_complex:
             cir = torch.complex(cir[0], cir[1])
-        # else: keep (2, A, L)
 
         L = cir.shape[-1]
         target_L = 1 << (L - 1).bit_length()
         if target_L > L:
             pad_width = target_L - L
             pad_tuple = (0, pad_width)
-            if self.as_complex:
-                cir = F.pad(cir, pad_tuple, value=0.0)
-            else:
-                cir = F.pad(cir, pad_tuple)
+            cir = F.pad(cir, pad_tuple, value=0.0 if self.as_complex else 0.0)
 
         loc_raw = torch.from_numpy(loc_np).float()
         denom = (self.loc_max - self.loc_min).clamp_min(1e-6)
@@ -301,3 +284,61 @@ class UWBLoc(Dataset):
                 self._h5.close()
             except Exception:
                 pass
+
+
+class IqDataset(Dataset):
+    """Generic IQ tensor reader (2, C, T) for classification or regression targets."""
+
+    def __init__(self, h5_path: str | Path, target_key: str | None = None, normalize: bool = True):
+        self.h5_path = Path(h5_path)
+        self.normalize = normalize
+        self._h5: h5py.File | None = None
+        with h5py.File(self.h5_path, "r") as h5:
+            if "iq" not in h5:
+                raise KeyError(f"Expected dataset 'iq' in {self.h5_path}")
+            self.length = h5["iq"].shape[0]
+            self.sample_shape = tuple(h5["iq"].shape[1:])
+            if target_key is None:
+                target_key = "label" if "label" in h5 else "target"
+            if target_key not in h5:
+                raise KeyError(f"Target key '{target_key}' not found in {self.h5_path}")
+            self.target_key = target_key
+            self.labels = json.loads(h5.attrs.get("labels", "[]"))
+            mean_attr = h5.attrs.get("mean")
+            std_attr = h5.attrs.get("std")
+            self.stats = None
+            if mean_attr is not None and std_attr is not None:
+                self.stats = {
+                    "mean": np.asarray(mean_attr, dtype=np.float32),
+                    "std": np.asarray(std_attr, dtype=np.float32),
+                }
+
+    def _require(self) -> h5py.File:
+        if self._h5 is None:
+            self._h5 = h5py.File(self.h5_path, "r")
+        return self._h5
+
+    def __getitem__(self, index: int):
+        h5 = self._require()
+        x = torch.as_tensor(h5["iq"][index])
+        if self.normalize and self.stats is not None:
+            mu = torch.tensor(self.stats["mean"], dtype=torch.float32).view(2, 1, 1)
+            sd = torch.tensor(self.stats["std"], dtype=torch.float32).clamp_min(1e-6).view(2, 1, 1)
+            x = (x - mu) / sd
+        y = torch.as_tensor(h5[self.target_key][index])
+        # cast to long for classification if dtype is integer
+        if torch.is_floating_point(y):
+            pass
+        else:
+            y = y.to(torch.long)
+        return x, y
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __del__(self):
+        try:
+            if self._h5 is not None:
+                self._h5.close()
+        except Exception:
+            pass

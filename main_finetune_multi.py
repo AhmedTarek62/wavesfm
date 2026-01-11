@@ -22,11 +22,13 @@ from wavesfm.utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Cache-first multimodal fine-tuning entrypoint.")
-    p.add_argument("--task", required=True, choices=SUPPORTED_TASKS, help="Which cached dataset to use.")
-    p.add_argument("--train-cache", required=True, help="Path to training cache (HDF5).")
-    p.add_argument("--val-cache", help="Optional validation cache (HDF5). If omitted, we split train-cache.")
-    p.add_argument("--val-split", type=float, default=0.2, help="Val fraction if val-cache is not provided.")
+    p = argparse.ArgumentParser(description="HDF5-first multimodal fine-tuning entrypoint.")
+    p.add_argument("--task", required=True, choices=SUPPORTED_TASKS, help="Which dataset to use.")
+    p.add_argument("--train-data", dest="train_path", help="Path to training data (HDF5).")
+    p.add_argument("--train-cache", dest="train_path_legacy", help="(Legacy) alias for --train-data.")
+    p.add_argument("--val-data", dest="val_path", help="Optional validation data (HDF5).")
+    p.add_argument("--val-cache", dest="val_path_legacy", help="(Legacy) alias for --val-data.")
+    p.add_argument("--val-split", type=float, default=0.2, help="Val fraction if validation data is not provided.")
 
     # Model
     p.add_argument("--model", default="vit_multi_small", help="Model name from models_vit_multi.")
@@ -66,6 +68,10 @@ def parse_args() -> argparse.Namespace:
     args = p.parse_args()
     if args.iq_downsample == "none":
         args.iq_downsample = None
+    args.train_path = args.train_path or args.train_path_legacy
+    args.val_path = args.val_path or args.val_path_legacy
+    if not args.train_path:
+        raise ValueError("Please provide --train-data")
     return args
 
 
@@ -119,8 +125,8 @@ def main():
 
     train_ds, val_ds, task_info = build_datasets(
         args.task,
-        args.train_cache,
-        val_path=args.val_cache,
+        args.train_path,
+        val_path=args.val_path,
         val_split=args.val_split,
         seed=args.seed,
     )
@@ -154,7 +160,13 @@ def main():
         print(f"[init] loaded finetune checkpoint {args.finetune}")
         print(msg)
 
-    criterion = torch.nn.CrossEntropyLoss() if task_info.target_type == "classification" else torch.nn.MSELoss()
+    if task_info.target_type == "classification":
+        criterion = torch.nn.CrossEntropyLoss()
+    elif task_info.target_type == "position":
+        criterion = torch.nn.MSELoss()
+    else:
+        criterion = torch.nn.MSELoss()
+
     eff_batch = args.batch_size * args.accum_steps
     if args.lr is None:
         args.lr = args.blr * eff_batch / 256
@@ -167,7 +179,19 @@ def main():
     lr_schedule = cosine_schedule(args.lr, args.min_lr, total_steps, warmup_steps)
 
     start_epoch = 0
-    best_metric = float("-inf") if task_info.target_type == "classification" else float("inf")
+    if task_info.target_type == "classification":
+        best_metric = float("-inf")
+        best_key = "pca"
+        better = lambda cur, best: cur > best
+    elif task_info.target_type == "position":
+        best_metric = float("inf")
+        best_key = "mean_distance_error"
+        better = lambda cur, best: cur < best
+    else:
+        best_metric = float("inf")
+        best_key = "mae"
+        better = lambda cur, best: cur < best
+
     if args.resume:
         ckpt = torch.load(args.resume, map_location="cpu", weights_only=False)
         model.load_state_dict(ckpt["model"])
@@ -176,9 +200,6 @@ def main():
         start_epoch = ckpt.get("epoch", -1) + 1
         best_metric = ckpt.get("best_metric", best_metric)
         print(f"[resume] loaded {args.resume} (epoch {start_epoch})")
-
-    best_key = "pca" if task_info.target_type == "classification" else "mean_distance_error"
-    better = (lambda cur, best: cur > best) if task_info.target_type == "classification" else (lambda cur, best: cur < best)
 
     if args.eval_only:
         val_stats = evaluate(
