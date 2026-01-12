@@ -15,11 +15,8 @@ def _decode(val):
     return val
 
 
-class H5IQDataset(Dataset):
-    """
-    Minimal HDF5-backed loader for IQ-style caches.
-    Assumes preprocessing has already normalized the samples.
-    """
+class IQDataset(Dataset):
+    """Minimal loader for IQ-style caches (pre-normalized, stored in h5)."""
 
     def __init__(
         self,
@@ -75,11 +72,8 @@ class H5IQDataset(Dataset):
                 pass
 
 
-class H5ImageDataset(Dataset):
-    """
-    Minimal HDF5-backed loader for image-like caches (C,H,W).
-    Assumes preprocessing has already normalized the samples.
-    """
+class ImageDataset(Dataset):
+    """Minimal loader for image-like caches (C,H,W), pre-normalized and stored in h5."""
 
     def __init__(
         self,

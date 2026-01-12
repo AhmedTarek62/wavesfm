@@ -9,10 +9,11 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 
-from wavesfm import models_vit_multi
-from wavesfm.data import SUPPORTED_TASKS, build_datasets
-from wavesfm.engine import evaluate, train_one_epoch
-from wavesfm.utils import (
+import models_vit
+from data import SUPPORTED_TASKS, build_datasets
+from lora import create_lora_model
+from engine import evaluate, train_one_epoch
+from utils import (
     JsonlLogger,
     count_parameters,
     cosine_schedule,
@@ -22,16 +23,17 @@ from wavesfm.utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="HDF5-first multimodal fine-tuning entrypoint.")
+    p = argparse.ArgumentParser(description="Multimodal fine-tuning entrypoint.")
     p.add_argument("--task", required=True, choices=SUPPORTED_TASKS, help="Which dataset to use.")
-    p.add_argument("--train-data", dest="train_path", help="Path to training data (HDF5).")
-    p.add_argument("--train-cache", dest="train_path_legacy", help="(Legacy) alias for --train-data.")
-    p.add_argument("--val-data", dest="val_path", help="Optional validation data (HDF5).")
-    p.add_argument("--val-cache", dest="val_path_legacy", help="(Legacy) alias for --val-data.")
+    p.add_argument("--train-data", dest="train_path", required=True, help="Path to training data.")
+    p.add_argument("--val-data", dest="val_path", help="Optional validation data.")
     p.add_argument("--val-split", type=float, default=0.2, help="Val fraction if validation data is not provided.")
 
     # Model
-    p.add_argument("--model", default="vit_multi_small", help="Model name from models_vit_multi.")
+    p.add_argument("--model", default="vit_multi_small", help="Model name from models_vit.")
+    p.add_argument("--lora", action="store_true", help="Enable LoRA adapters on q,v projections.")
+    p.add_argument("--lora-rank", type=int, default=8, help="LoRA rank (default: 8).")
+    p.add_argument("--lora-alpha", type=float, default=1.0, help="LoRA alpha scaling (default: 1.0).")
     p.add_argument("--global-pool", default="token", choices=["token", "avg"])
     p.add_argument("--vis-patch", type=int, default=16, help="Vision patch size.")
     p.add_argument("--iq-segment-len", type=int, default=16, help="Hop/segment length for IQ tokenization.")
@@ -55,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", default="wavesfm_runs", help="Where to store checkpoints and logs.")
     p.add_argument("--save-every", type=int, default=10, help="Checkpoint frequency in epochs.")
     p.add_argument("--finetune", default="", help="Pretrained checkpoint to initialize from (loads model only).")
-    p.add_argument("--resume", default="", help="Resume from our checkpoint (model+optim+scheduler).")
+    p.add_argument("--resume", default="", help="Resume from checkpoint (model+optim+scheduler).")
     p.add_argument("--eval-only", action="store_true", help="Skip training and run a single validation pass.")
 
     # Runtime
@@ -68,24 +70,23 @@ def parse_args() -> argparse.Namespace:
     args = p.parse_args()
     if args.iq_downsample == "none":
         args.iq_downsample = None
-    args.train_path = args.train_path or args.train_path_legacy
-    args.val_path = args.val_path or args.val_path_legacy
-    if not args.train_path:
-        raise ValueError("Please provide --train-data")
     return args
 
 
 def build_model(args: argparse.Namespace, task_info) -> torch.nn.Module:
-    model = models_vit_multi.__dict__[args.model](
+    model = models_vit.__dict__[args.model](
         modality=task_info.modality,
         global_pool=args.global_pool,
-        num_classes=task_info.num_classes,
+        num_outputs=task_info.num_outputs,
         vis_patch=args.vis_patch,
         vis_in_chans_actual=task_info.in_chans,
         iq_segment_len=args.iq_segment_len,
         iq_downsample=args.iq_downsample,
         iq_target_len=args.iq_target_len,
     )
+
+    if args.lora:
+        model = create_lora_model(model, lora_rank=args.lora_rank, lora_alpha=args.lora_alpha)
 
     if args.freeze_encoder:
         model.freeze_encoder(args.frozen_blocks)
@@ -161,9 +162,10 @@ def main():
         print(msg)
 
     if task_info.target_type == "classification":
-        criterion = torch.nn.CrossEntropyLoss()
-    elif task_info.target_type == "position":
-        criterion = torch.nn.MSELoss()
+        ce_kwargs = {}
+        if hasattr(train_ds, "class_weights"):
+            ce_kwargs["weight"] = train_ds.class_weights.to(device)
+        criterion = torch.nn.CrossEntropyLoss(**ce_kwargs)
     else:
         criterion = torch.nn.MSELoss()
 
@@ -171,7 +173,7 @@ def main():
     if args.lr is None:
         args.lr = args.blr * eff_batch / 256
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+    scaler = torch.amp.GradScaler(device == "cuda")
 
     steps_per_epoch = max(1, len(train_loader))
     total_steps = steps_per_epoch * args.epochs
@@ -209,7 +211,7 @@ def main():
             criterion,
             args.task,
             task_info.target_type,
-            task_info.num_classes,
+            task_info.num_outputs,
             coord_min=task_info.coord_min,
             coord_max=task_info.coord_max,
         )
@@ -243,7 +245,7 @@ def main():
             criterion,
             args.task,
             task_info.target_type,
-            task_info.num_classes,
+            task_info.num_outputs,
             coord_min=task_info.coord_min,
             coord_max=task_info.coord_max,
         )

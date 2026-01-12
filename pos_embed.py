@@ -1,22 +1,21 @@
+# --------------------------------------------------------
+# Position embedding utils
+# --------------------------------------------------------
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # --------------------------------------------------------
-# Position embedding utils
-# --------------------------------------------------------
-
-import numpy as np
-
-import torch
-
-# --------------------------------------------------------
 # 2D sine-cosine position embedding
 # References:
 # Transformer: https://github.com/tensorflow/models/blob/master/official/nlp/transformer/model_utils.py
 # MoCo v3: https://github.com/facebookresearch/moco-v3
-# --------------------------------------------------------
+
+
+import numpy as np
+
+import torch
 
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):

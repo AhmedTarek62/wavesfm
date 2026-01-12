@@ -1,6 +1,6 @@
-# WavesFM fine-tuning (HDF5-first)
+# WavesFM fine-tuning
 
-A lightweight, public-friendly entrypoint for reproducing our multimodal fine-tuning runs. Training only touches preprocessed HDF5 files; a small preprocessing package is included for users who need to generate those files from the original datasets.
+A lightweight, public-friendly entrypoint for reproducing our multimodal fine-tuning runs. Training uses precomputed caches; a small preprocessing package is included for users who need to generate those files from the original datasets.
 
 ## Supported tasks
 - IQ tasks: `amc`, `aoa`, `rml`, `rfp`, `deepbeam`, `interf`
@@ -8,10 +8,10 @@ A lightweight, public-friendly entrypoint for reproducing our multimodal fine-tu
 - Positioning: `pos` (5G), `uwb`
 - RadCom OTA: `radcom`
 
-Dataset loaders are HDF5-only and live under `wavesfm/dataset_classes/`; `wavesfm/data.py` wires them up per task.
+Dataset loaders live under `wavesfm/dataset_classes/`; `wavesfm/data.py` wires them up per task.
 
 ## Preprocessing
-Use the per-dataset scripts under `wavesfm/preprocessing/` (mirroring the original mae layout) to turn raw data into a single HDF5 file per split.
+Use the per-dataset scripts under `wavesfm/preprocessing/` to turn raw data into a single cache per split.
 
 Examples:
 ```bash
@@ -38,7 +38,7 @@ The IQ helper writes:
 - `label` (classification) or `target` (regression)
 - attrs: `mean`, `std`, `labels` (if available), `task`
 
-Other preprocessors reuse the original scripts under `preprocessing/` to keep parity with our pipelines.
+Other preprocessors follow the same pattern to stay aligned with the training pipelines.
 
 ## Fine-tuning
 Run the unified entrypoint:
@@ -54,10 +54,10 @@ python wavesfm/main_finetune_multi.py \
 ```
 
 Notes:
-- Training/eval only use the HDF5 files; no raw preprocessing happens in the dataloaders.
+- Training/eval only use the cached files; no raw preprocessing happens in the dataloaders.
 - Logging is JSONL to `output_dir/log.txt` plus checkpoints (`best.pth` and periodic `checkpoint_*.pth`).
 - `--eval-only` runs validation without training.
 
 ## Extending
-- To add a new task, register it in `wavesfm/data.py` (dataset factory + task metadata) and provide a preprocessing helper that writes an HDF5 with an `iq` or `image/features` dataset and a target.
+- To add a new task, register it in `wavesfm/data.py` (dataset factory + task metadata) and provide a preprocessing helper that writes a cache with an `iq` or `image/features` dataset and a target.
 - The training loop in `wavesfm/engine.py` is intentionally small and easy to tweak for extra metrics or behaviors.

@@ -1,7 +1,4 @@
-"""
-Precompute CSI sensing tensors with the deterministic preprocessing used for training.
-Load each .mat file, normalize, resize, and write HDF5.
-"""
+"""Precompute CSI sensing tensors with deterministic load/normalize/resize."""
 from __future__ import annotations
 
 import argparse
@@ -110,14 +107,14 @@ def preprocess_csi_sensing(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute CSI sensing tensors for fine-tuning/eval.")
     p.add_argument("--csi-path", required=True, help="Directory containing sensing CSI .mat files.")
-    p.add_argument("--output", required=True, help="Output HDF5 path (e.g., data/csi_sensing_cache.h5).")
+    p.add_argument("--output", required=True, help="Output path (e.g., data/csi_sensing_cache.h5).")
     p.add_argument("--img-size", type=int, default=224, help="Resize target (default: 224).")
-    p.add_argument("--batch-size", type=int, default=256, help="Chunk size for HDF5 writes (default: 256).")
+    p.add_argument("--batch-size", type=int, default=256, help="Chunk size for writes (default: 256).")
     p.add_argument(
         "--compression",
         default="none",
         choices=["gzip", "lzf", "none"],
-        help="h5 dataset compression (default: none).",
+        help="Dataset compression (default: none).",
     )
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing output file.")
     return p.parse_args()

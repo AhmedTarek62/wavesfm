@@ -1,6 +1,4 @@
-"""
-Convert UWB localization JSON dumps into an HDF5 cache with CIR tensors and normalized stats.
-"""
+"""Convert UWB localization JSON dumps into CIR tensors with normalized stats."""
 from __future__ import annotations
 
 import argparse
@@ -135,10 +133,10 @@ def preprocess_uwb(
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Preprocess UWB dataset JSON into an HDF5 file.")
+    p = argparse.ArgumentParser(description="Preprocess UWB dataset JSON into a cache.")
     p.add_argument("--root", default="~/data/uwb_loc", help="Dataset root containing environment folders.")
     p.add_argument("--environment", default="environment0", help="Environment folder name (e.g., environment0).")
-    p.add_argument("--output", default=None, help="Output .h5 path (default: <root>/<environment>_clean.h5).")
+    p.add_argument("--output", default=None, help="Output path (default: <root>/<environment>_clean.h5).")
     p.add_argument("--batch-size", type=int, default=1024, help="Number of samples per write batch.")
     return p.parse_args()
 

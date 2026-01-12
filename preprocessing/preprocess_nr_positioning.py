@@ -1,7 +1,4 @@
-"""
-Precompute positioning tensors: load each CSI feature file, apply normalization/resizing,
-normalize positions, and store a single HDF5 cache.
-"""
+"""Precompute positioning tensors: load, normalize, resize features and positions."""
 from __future__ import annotations
 
 import argparse
@@ -120,6 +117,7 @@ def preprocess_positioning(
         h5.attrs["std"] = json.dumps([float(x) for x in stats["std"]])
         h5.attrs["coord_nominal_min"] = json.dumps([float(x) for x in stats["coord_min"]])
         h5.attrs["coord_nominal_max"] = json.dumps([float(x) for x in stats["coord_max"]])
+        h5.attrs["class_weights"] = json.dumps([])  # placeholder for interface parity
 
         for idx, fname in enumerate(tqdm(data_files, desc="Caching positioning")):
             with h5py.File(datapath / fname, "r") as f:
@@ -136,11 +134,11 @@ def preprocess_positioning(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute positioning tensors into a single cache.")
-    p.add_argument("--data-path", required=True, help="Directory containing positioning .h5 files.")
-    p.add_argument("--output", required=True, help="Output HDF5 path (e.g., data/positioning_cache.h5).")
+    p.add_argument("--data-path", required=True, help="Directory containing positioning files.")
+    p.add_argument("--output", required=True, help="Output path (e.g., data/positioning_cache.h5).")
     p.add_argument("--scene", default="outdoor", choices=list(SCENE_STATS.keys()), help="Which scene stats to use.")
     p.add_argument("--img-size", type=int, default=224, help="Resize target (default: 224).")
-    p.add_argument("--batch-size", type=int, default=256, help="Chunk size for HDF5 writes (default: 256).")
+    p.add_argument("--batch-size", type=int, default=256, help="Chunk size for writes (default: 256).")
     p.add_argument(
         "--compression",
         default="none",

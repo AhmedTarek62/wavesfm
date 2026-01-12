@@ -1,6 +1,4 @@
-"""
-Repack RadCom OTA HDF5 keyed by tuple strings into normalized, column-style datasets.
-"""
+"""Repack RadCom OTA keyed by tuple strings into normalized, column-style datasets."""
 from __future__ import annotations
 
 import argparse
@@ -109,6 +107,7 @@ def preprocess_radcom(
         dst.attrs["mean"] = mean
         dst.attrs["std"] = std
 
+        counts = np.zeros(len(label_pairs), dtype=np.int64)
         idx = 0
         for start in tqdm(range(0, n, batch_size), desc="Pass 2: write", unit="sample"):
             end = min(start + batch_size, n)
@@ -123,7 +122,9 @@ def preprocess_radcom(
                 sample = _to_2ct(src[key][:])
                 sample = (sample - mean[:, None, None]) / std[:, None, None]
                 samples.append(sample)
-                labels.append(label_map[(mod, sig)])
+                lbl = label_map[(mod, sig)]
+                labels.append(lbl)
+                counts[lbl] += 1
                 mods.append(mod)
                 sigs.append(sig)
                 snrs.append(snr)
@@ -139,19 +140,24 @@ def preprocess_radcom(
             dst["signal_type"][idx:idx + len(batch_samples)] = np.asarray(sigs, dtype=object)
             idx += len(batch_samples)
 
+        freq = counts.astype(np.float64) / max(1, counts.sum())
+        weights = np.where(freq > 0, 1.0 / freq, 0.0)
+        weights = weights / weights.sum().clip(min=1e-8)
+        dst.attrs["class_weights"] = weights.astype(np.float32)
+
     return output
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Repack and normalize RadCom OTA HDF5 keyed by tuple labels.")
-    p.add_argument("--input", required=True, help="Source HDF5 file with tuple keys (modulation, signal_type, snr, sample_idx).")
-    p.add_argument("--output", required=True, help="Destination HDF5 path for reorganized arrays.")
+    p = argparse.ArgumentParser(description="Repack and normalize RadCom OTA keyed by tuple labels.")
+    p.add_argument("--input", required=True, help="Source file with tuple keys (modulation, signal_type, snr, sample_idx).")
+    p.add_argument("--output", required=True, help="Destination path for reorganized arrays.")
     p.add_argument("--batch-size", type=int, default=256, help="Chunk size for output datasets (default: 256).")
     p.add_argument(
         "--compression",
         default="none",
         choices=["gzip", "lzf", "none"],
-        help="h5 dataset compression (default: none).",
+        help="Dataset compression (default: none).",
     )
     p.add_argument("--no-sort", action="store_true", help="Keep original key order instead of sorting.")
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing output file.")

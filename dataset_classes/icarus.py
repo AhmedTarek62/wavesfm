@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import torch
-
-from dataset_classes.base import H5IQDataset
+from dataset_classes.base import IQDataset
 
 
-class IcarusCache(H5IQDataset):
-    """HDF5-backed Icarus interference detection dataset produced by preprocess_icarus.py."""
+class Icarus(IQDataset):
+    """Icarus interference detection dataset produced by preprocess_icarus.py (h5)."""
 
     def __init__(self, h5_path: str | Path, return_meta: bool = False):
         self.return_meta = bool(return_meta)

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import h5py
 
-from dataset_classes.base import H5IQDataset
+from dataset_classes.base import IQDataset
 
 RADCOM_OTA_LABELS: Tuple[Tuple[str, str], ...] = (
     ("AM-DSB", "AM radio"),
@@ -23,8 +23,8 @@ RADCOM_OTA_LABELS: Tuple[Tuple[str, str], ...] = (
 )
 
 
-class RadComOtaCache(H5IQDataset):
-    """Load normalized RadCom OTA cache saved by preprocess_radcom.py."""
+class RadComOta(IQDataset):
+    """Load normalized RadCom OTA cache saved by preprocess_radcom.py (h5)."""
 
     def __init__(self, h5_path: str | Path, return_snr: bool = False):
         self.return_snr = bool(return_snr)

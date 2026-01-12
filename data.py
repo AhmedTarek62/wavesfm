@@ -10,12 +10,12 @@ import torch
 from torch.utils.data import Dataset, random_split
 
 from dataset_classes import (
-    H5IQDataset,
-    H5ImageDataset,
-    RadComOtaCache,
-    RMLCache,
-    RFPDataset,
-    IcarusCache,
+    IQDataset,
+    ImageDataset,
+    RadComOta,
+    RML,
+    Powder,
+    Icarus,
     UWBLoc,
 )
 
@@ -25,11 +25,8 @@ SUPPORTED_TASKS = (
     "pos",
     "radcom",
     "uwb",
-    "amc",
-    "aoa",
     "rml",
     "rfp",
-    "deepbeam",
     "interf",
 )
 
@@ -39,7 +36,7 @@ class TaskInfo:
     name: str
     modality: str  # 'vision' | 'iq'
     target_type: str  # 'classification' | 'position' | 'regression'
-    num_classes: int
+    num_outputs: int
     in_chans: int | None = None
     coord_min: torch.Tensor | None = None
     coord_max: torch.Tensor | None = None
@@ -47,26 +44,30 @@ class TaskInfo:
 
 def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
     if task == "sensing":
-        return lambda p: H5ImageDataset(p, sample_key="csi", label_key="label")
+        return lambda p: ImageDataset(p, sample_key="csi", label_key="label")
     if task == "rfs":
-        return lambda p: H5ImageDataset(p, sample_key="image", label_key="label")
+        return lambda p: ImageDataset(p, sample_key="image", label_key="label")
     if task == "pos":
-        return lambda p: H5ImageDataset(p, sample_key="features", label_key="label")
+        return lambda p: ImageDataset(p, sample_key="features", label_key="label")
     if task == "radcom":
-        return lambda p: RadComOtaCache(p)
+        return lambda p: RadComOta(p)
     if task == "uwb":
         return lambda p: UWBLoc(p, as_complex=False)
     if task == "rml":
-        return lambda p: RMLCache(p)
+        return lambda p: RML(p)
     if task == "rfp":
-        return lambda p: RFPDataset(p)
+        return lambda p: Powder(p)
     if task == "interf":
-        return lambda p: IcarusCache(p)
-    if task in {"amc", "deepbeam"}:
-        return lambda p: H5IQDataset(p, sample_key="sample", label_key="label")
-    if task == "aoa":
-        return lambda p: H5IQDataset(p, sample_key="sample", label_key="target")
+        return lambda p: Icarus(p)
     raise ValueError(f"Unsupported task: {task}")
+
+
+def _load_class_weights(h5_path: Path) -> torch.Tensor | None:
+    with h5py.File(h5_path, "r") as h5:
+        cw = h5.attrs.get("class_weights", None)
+        if cw is None:
+            return None
+        return torch.as_tensor(cw, dtype=torch.float32)
 
 
 def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
@@ -74,18 +75,18 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
         num_classes = len(getattr(dataset, "labels", [])) or 6
         return TaskInfo(
             name=task, modality="vision", target_type="classification",
-            num_classes=num_classes, in_chans=3,
+            num_outputs=num_classes, in_chans=3,
         )
     if task == "rfs":
         num_classes = len(getattr(dataset, "labels", [])) or 20
         return TaskInfo(
             name=task, modality="vision", target_type="classification",
-            num_classes=num_classes, in_chans=1,
+            num_outputs=num_classes, in_chans=1,
         )
     if task == "radcom":
         return TaskInfo(
             name=task, modality="iq", target_type="classification",
-            num_classes=len(getattr(dataset, "label_pairs", getattr(dataset, "labels", [])) or []), in_chans=None,
+            num_outputs=len(getattr(dataset, "label_pairs", getattr(dataset, "labels", [])) or []), in_chans=None,
         )
     if task == "pos":
         coord_min = coord_max = torch.tensor([], dtype=torch.float32)
@@ -97,7 +98,7 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
         target_dim = int(label.numel()) if torch.is_tensor(label) else len(label)
         return TaskInfo(
             name=task, modality="vision", target_type="position",
-            num_classes=target_dim, in_chans=sample.shape[0],
+            num_outputs=target_dim, in_chans=sample.shape[0],
             coord_min=coord_min, coord_max=coord_max,
         )
     if task == "uwb":
@@ -105,28 +106,28 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
         target_dim = int(label.numel()) if torch.is_tensor(label) else len(label)
         return TaskInfo(
             name=task, modality="iq", target_type="position",
-            num_classes=target_dim, in_chans=None,
+            num_outputs=target_dim, in_chans=None,
             coord_min=dataset.loc_min, coord_max=dataset.loc_max,
         )
     if task == "amc":
         num_classes = len(getattr(dataset, "labels", [])) or 7
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_classes=num_classes)
+        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "aoa":
         sample, target = dataset[0]
         target_dim = int(target.numel()) if torch.is_tensor(target) else len(target)
-        return TaskInfo(name=task, modality="iq", target_type="regression", num_classes=target_dim)
+        return TaskInfo(name=task, modality="iq", target_type="regression", num_outputs=target_dim)
     if task == "rml":
         num_classes = len(getattr(dataset, "labels", [])) or 11
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_classes=num_classes)
+        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "rfp":
         num_classes = len(getattr(dataset, "labels", [])) or 4
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_classes=num_classes)
+        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "deepbeam":
         num_classes = len(getattr(dataset, "labels", [])) or 5
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_classes=num_classes)
+        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "interf":
         num_classes = len(getattr(dataset, "labels", [])) or 3
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_classes=num_classes)
+        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     raise ValueError(f"Unsupported task: {task}")
 
 
@@ -145,10 +146,18 @@ def build_datasets(
 
     factory = _dataset_factory(task)
     train_ds = factory(train_path)
+    cw = _load_class_weights(Path(train_path))
+    if cw is not None:
+        train_ds.class_weights = cw
+
     info = _infer_task_info(task, train_ds)
 
     if val_path:
         val_ds = factory(val_path)
+        if cw is None:
+            cw_val = _load_class_weights(Path(val_path))
+            if cw_val is not None:
+                train_ds.class_weights = cw_val
     else:
         if not 0 < val_split < 1:
             raise ValueError("val_split must be in (0, 1) when val_path is omitted.")

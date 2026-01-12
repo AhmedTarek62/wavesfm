@@ -6,7 +6,7 @@ import torch
 from timm.utils import accuracy
 
 from dataset_classes import RADCOM_OTA_LABELS
-from wavesfm.utils import AverageMeter, apply_lr, pretty_dict
+from utils import AverageMeter, apply_lr, pretty_dict
 
 
 def _unpack_batch(batch):
@@ -100,14 +100,14 @@ def evaluate_classification(
     data_loader,
     device: torch.device,
     criterion: torch.nn.Module,
-    num_classes: int,
+    num_outputs: int,
 ) -> Dict[str, float]:
     model.eval()
     loss_meter = AverageMeter()
     acc1_meter = AverageMeter()
     acc3_meter = AverageMeter()
-    per_class_correct = torch.zeros(num_classes, device=device)
-    per_class_total = torch.zeros(num_classes, device=device)
+    per_class_correct = torch.zeros(num_outputs, device=device)
+    per_class_total = torch.zeros(num_outputs, device=device)
 
     autocast_enabled = device.type == "cuda"
     for batch in data_loader:
@@ -314,14 +314,14 @@ def evaluate(
     criterion: torch.nn.Module,
     task_name: str,
     task_type: str,
-    num_classes: int,
+    num_outputs: int,
     coord_min: torch.Tensor | None = None,
     coord_max: torch.Tensor | None = None,
 ) -> Dict[str, float]:
     if task_type == "classification" and task_name == "radcom":
         return evaluate_radcom(model, data_loader, device, criterion)
     if task_type == "classification":
-        return evaluate_classification(model, data_loader, device, criterion, num_classes)
+        return evaluate_classification(model, data_loader, device, criterion, num_outputs)
     if task_type == "position":
         assert coord_min is not None and coord_max is not None, "coord_min/max required for position tasks"
         return evaluate_positioning(model, data_loader, device, criterion, coord_min, coord_max)

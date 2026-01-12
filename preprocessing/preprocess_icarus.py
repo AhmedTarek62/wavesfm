@@ -1,7 +1,4 @@
-"""
-Precompute Icarus Powder interference detection tensors into an HDF5 cache.
-Mirrors the normalization and center-cropping used by the dataset class.
-"""
+"""Precompute Icarus Powder interference detection tensors with normalization and center-crop."""
 from __future__ import annotations
 
 import argparse
@@ -138,6 +135,7 @@ def preprocess_icarus(
 
     n = len(items)
     chunk = min(256, n)
+    counts = np.zeros(3, dtype=np.int64)  # LTE=0, DSSS_mod log2 variants
     with h5py.File(output, "w") as h5:
         h5.create_dataset(
             "sample",
@@ -171,10 +169,17 @@ def preprocess_icarus(
             x = (x - MU[:, None]) / STD[:, None]
 
             h5["sample"][idx] = x[:, None, :]
-            h5["label"][idx] = _encode_label(it["row"].get("Signal_Type", ""), it["row"].get("DSSS_Mod", None))
+            lbl = _encode_label(it["row"].get("Signal_Type", ""), it["row"].get("DSSS_Mod", None))
+            counts[min(lbl, 2)] += 1  # clamp unexpected to last bin
+            h5["label"][idx] = lbl
             h5["band"][idx] = int(it["band"])
             h5["fs"][idx] = float(it["fs"])
             h5["source_file"][idx] = str(it["bin"])
+
+        freq = counts.astype(np.float64) / max(1, counts.sum())
+        weights = np.where(freq > 0, 1.0 / freq, 0.0)
+        weights = weights / weights.sum().clip(min=1e-8)
+        h5.attrs["class_weights"] = weights.astype(np.float32)
 
     return output
 
@@ -190,7 +195,7 @@ def parse_args() -> argparse.Namespace:
         "--compression",
         default="none",
         choices=["gzip", "lzf", "none"],
-        help="h5 dataset compression (default: none).",
+        help="Dataset compression (default: none).",
     )
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing output file.")
     return p.parse_args()

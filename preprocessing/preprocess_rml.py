@@ -1,6 +1,4 @@
-"""
-Flatten RML 2016/2022 datasets into an HDF5 cache with normalized IQ samples.
-"""
+"""Flatten RML 2016/2022 datasets into a cache with normalized IQ samples."""
 from __future__ import annotations
 
 import argparse
@@ -92,13 +90,16 @@ def preprocess_rml(
         h5.attrs["mu"] = json.dumps([float(x) for x in mu.flatten()])
         h5.attrs["std"] = json.dumps([float(x) for x in std.flatten()])
         h5.attrs["sample_len"] = int(sample_len)
+        counts = np.zeros(len(LABELS), dtype=np.int64)
 
         idx = 0
         for mod, snr in tqdm(keys, desc="Caching RML"):
             arr = data[(mod, snr)].astype(np.float32, copy=False)
             n = arr.shape[0]
-            arr = (arr - mu) / std  # broadcast over channel axis
-            labels = np.full((n,), LABELS.index(mod), dtype=np.int64)
+            arr = (arr - mu[..., None]) / std[..., None]  # broadcast over channel/time
+            lbl_idx = LABELS.index(mod)
+            labels = np.full((n,), lbl_idx, dtype=np.int64)
+            counts[lbl_idx] += n
             snr_vals = np.full((n,), int(snr), dtype=np.int16)
 
             h5["sample"][idx : idx + n] = arr[:, :, None, :]
@@ -107,15 +108,20 @@ def preprocess_rml(
             h5["modulation"][idx : idx + n] = np.asarray([mod] * n, dtype=object)
             idx += n
 
+        freq = counts.astype(np.float64) / max(1, counts.sum())
+        weights = np.where(freq > 0, 1.0 / freq, 0.0)
+        weights = weights / weights.sum().clip(min=1e-8)
+        h5.attrs["class_weights"] = weights.astype(np.float32)
+
     return output
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Precompute RML dataset into an HDF5 cache.")
+    p = argparse.ArgumentParser(description="Precompute RML dataset into a cache.")
     p.add_argument("--root", required=True, help="Directory containing RML files (RML2016.10a_dict.pkl or RML22.01A).")
     p.add_argument("--version", required=True, choices=["2016", "2022"], help="Dataset version to process.")
-    p.add_argument("--output", required=True, help="Output HDF5 path.")
-    p.add_argument("--batch-size", type=int, default=1024, help="Chunk size for HDF5 writes (default: 1024).")
+    p.add_argument("--output", required=True, help="Output path.")
+    p.add_argument("--batch-size", type=int, default=1024, help="Chunk size for writes (default: 1024).")
     p.add_argument(
         "--compression",
         default="none",

@@ -1,6 +1,4 @@
-"""
-Chunk RF fingerprinting recordings into standardized IQ tensors and store in HDF5.
-"""
+"""Chunk RF fingerprinting recordings into standardized IQ tensors and store them."""
 from __future__ import annotations
 
 import argparse
@@ -90,12 +88,13 @@ def preprocess_rfp(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     labels = list(allowed_labels) if allowed_labels is not None else list(DEFAULT_LABELS)
-    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
     hop = int(hop_len) if hop_len is not None else int(chunk_len)
 
     records = _list_records(root, labels)
     if not records:
         raise RuntimeError(f"No usable recordings found under {root}")
+
+    counts = np.zeros(len(labels), dtype=np.int64)
 
     index: List[Dict] = []
     for rec_id, rec in enumerate(records):
@@ -111,6 +110,23 @@ def preprocess_rfp(
 
     if not index:
         raise RuntimeError("No chunks indexed; check chunk_len/hop_len and data length.")
+
+    # Pass 1: global mean/std
+    sum_ch = np.zeros(2, dtype=np.float64)
+    sumsq_ch = np.zeros(2, dtype=np.float64)
+    total_vals = len(index) * chunk_len
+    for entry in tqdm(index, desc="Pass 1: stats"):
+        rec = records[entry["rec_id"]]
+        mm = np.memmap(rec["bin_path"], mode="r", dtype=np.complex64)
+        seg_c = mm[entry["start"] : entry["start"] + entry["length"]]
+        x = np.empty((2, entry["length"]), dtype=np.float32)
+        x[0] = seg_c.real.astype(np.float32, copy=False)
+        x[1] = seg_c.imag.astype(np.float32, copy=False)
+        sum_ch += x.sum(axis=1)
+        sumsq_ch += np.square(x, dtype=np.float64).sum(axis=1)
+    mean = sum_ch / float(total_vals)
+    var = sumsq_ch / float(total_vals) - np.square(mean)
+    std = np.sqrt(np.clip(var, 1e-12, None))
 
     n = len(index)
     chunk = min(512, n)
@@ -138,6 +154,8 @@ def preprocess_rfp(
         h5.attrs["hop_len"] = int(hop)
         h5.attrs["root"] = str(root)
         h5.attrs["version"] = "v1"
+        h5.attrs["mean"] = mean.astype(np.float32)
+        h5.attrs["std"] = std.astype(np.float32)
 
         for idx, entry in enumerate(tqdm(index, desc="Caching RF fingerprinting")):
             rec = records[entry["rec_id"]]
@@ -146,17 +164,21 @@ def preprocess_rfp(
             x = np.empty((2, entry["length"]), dtype=np.float32)
             x[0] = seg_c.real.astype(np.float32, copy=False)
             x[1] = seg_c.imag.astype(np.float32, copy=False)
-            for ch in range(2):
-                mu = x[ch].mean()
-                sigma = x[ch].std()
-                x[ch] = (x[ch] - mu) / (sigma + 1e-7)
+            x[0] = (x[0] - mean[0]) / std[0]
+            x[1] = (x[1] - mean[1]) / std[1]
 
             h5["sample"][idx] = x[:, None, :]
             h5["label"][idx] = rec["label_idx"]
+            counts[rec["label_idx"]] += 1
             h5["source_file"][idx] = rec["stem"]
             h5["start"][idx] = entry["start"]
             h5["sample_rate"][idx] = rec["sample_rate"] if rec["sample_rate"] is not None else np.nan
             h5["center_freq"][idx] = rec["center_freq"] if rec["center_freq"] is not None else np.nan
+
+        freq = counts.astype(np.float64) / max(1, counts.sum())
+        weights = np.where(freq > 0, 1.0 / freq, 0.0)
+        weights = weights / weights.sum().clip(min=1e-8)
+        h5.attrs["class_weights"] = weights.astype(np.float32)
 
     return output
 
@@ -172,7 +194,7 @@ def parse_args() -> argparse.Namespace:
         "--compression",
         default="none",
         choices=["gzip", "lzf", "none"],
-        help="h5 dataset compression (default: none).",
+        help="Dataset compression (default: none).",
     )
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing output file.")
     return p.parse_args()

@@ -8,18 +8,17 @@ import torch.nn.functional as F
 from timm.models.vision_transformer import Block, PatchEmbed
 from timm.models._manipulate import checkpoint_seq
 
-from wavesfm.pos_embed import get_2d_sincos_pos_embed, get_1d_sincos_pos_embed
+from pos_embed import get_2d_sincos_pos_embed, get_1d_sincos_pos_embed
 
 
 class ModalityAdapterViT(nn.Module):
     """
-    A *simple* ViT fine-tuner that can operate on exactly **one** modality per
-    instantiation: either 'vision' or 'iq'. The shared encoder & head behavior
-    mirrors your `IQVisionTransformer`, but the input adapter swaps based on
-    the chosen modality.
+    A *simple* ViT fine-tuner that operates on exactly one modality per
+    instantiation: either 'vision' or 'iq'. The input adapter swaps based on
+    the chosen modality while the encoder/head stay the same.
 
     Use cases
-      - Fine-tune on *vision* tasks: pass modality='vision' and provide images.
+      - Fine-tune on wirelss *vision* tasks: pass modality='vision' and provide image-like inputs (C, H, W).
       - Fine-tune on *iq* tasks: pass modality='iq' and provide (N,2,C,T) IQ.
 
     Key features
@@ -33,7 +32,7 @@ class ModalityAdapterViT(nn.Module):
     def __init__(
         self,
         modality: str,                     # 'vision' | 'iq'
-        num_classes: int,
+        num_outputs: int,
         # --- shared encoder ---
         embed_dim: int = 512,
         depth: int = 12,
@@ -77,7 +76,7 @@ class ModalityAdapterViT(nn.Module):
         self.norm_pre = nn.Identity()
         self.norm = norm_layer(self.embed_dim)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
-        # Optional conditional FiLM (same shapes & names as MAE for easy weight load)
+        # Optional conditional FiLM (keeps shape compatibility with existing checkpoints)
         if self.use_conditional_ln:
             self.mod_ln_scale = nn.ParameterDict({
                 'vision': nn.Parameter(torch.ones(self.embed_dim)),
@@ -90,12 +89,12 @@ class ModalityAdapterViT(nn.Module):
 
         # --- head ---
         if head_layers <= 1:
-            self.head = nn.Linear(self.embed_dim, int(num_classes))
+            self.head = nn.Linear(self.embed_dim, int(num_outputs))
         else:
             h = []
             for _ in range(head_layers - 1):
                 h += [nn.Linear(self.embed_dim, self.embed_dim), nn.ReLU()]
-            h += [nn.Linear(self.embed_dim, int(num_classes))]
+            h += [nn.Linear(self.embed_dim, int(num_outputs))]
             self.head = nn.Sequential(*h)
         self.tanh = bool(tanh)
 
@@ -294,7 +293,7 @@ class ModalityAdapterViT(nn.Module):
         cls = self.cls_token.expand(tok.size(0), 1, -1)
         z = torch.cat([cls, tok], dim=1)     # (N,1+L,D)
         z = self.norm_pre(z)
-        # Apply conditional FiLM like MultimodalMAE (_encode)
+        # Apply conditional FiLM when enabled
         if getattr(self, 'use_conditional_ln', False):
             g = self.mod_ln_scale[self.modality]
             b = self.mod_ln_bias[self.modality]
@@ -411,7 +410,6 @@ def vit_multi_small(**kwargs):
 
 
 def vit_multi_base(**kwargs):
-    """~40-60M params."""
     return ModalityAdapterViT(
         embed_dim=512, depth=12, num_heads=8, mlp_ratio=4.0,
         vis_img_size=224, vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=32,
@@ -420,7 +418,6 @@ def vit_multi_base(**kwargs):
 
 
 def vit_multi_large(**kwargs):
-    """~80M params+ (heavier)."""
     return ModalityAdapterViT(
         embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.0,
         vis_img_size=224, vis_in_chans=1, iq_max_tokens=256, iq_max_antennas=32,

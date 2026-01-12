@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.utils.data import WeightedRandomSampler, Subset
 
-from dataset_classes.base import H5IQDataset
+from dataset_classes.base import IQDataset
 
 
 LABELS = (
@@ -27,8 +27,8 @@ LABELS = (
 )
 
 
-class RMLCache(H5IQDataset):
-    """HDF5-backed RML cache produced by preprocess_rml.py."""
+class RML(IQDataset):
+    """RML cache produced by preprocess_rml.py (h5)."""
 
     def __init__(self, h5_path: str | Path, return_snr: bool = False):
         self.return_snr = bool(return_snr)
