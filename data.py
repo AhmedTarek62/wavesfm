@@ -3,18 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Tuple
+import json
 
+import h5py
 import torch
 from torch.utils.data import Dataset, random_split
 
-from wavesfm.datasets import (
-    IqDataset,
-    PositioningDataset,
-    RadComDataset,
-    RADCOM_OTA_LABELS,
-    RadioSignalDataset,
-    SensingDataset,
-    UwbDataset,
+from dataset_classes import (
+    H5IQDataset,
+    H5ImageDataset,
+    RadComOtaCache,
+    RMLCache,
+    RFPDataset,
+    IcarusCache,
+    UWBLoc,
 )
 
 SUPPORTED_TASKS = (
@@ -45,19 +47,25 @@ class TaskInfo:
 
 def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
     if task == "sensing":
-        return lambda p: SensingDataset(p)
+        return lambda p: H5ImageDataset(p, sample_key="csi", label_key="label")
     if task == "rfs":
-        return lambda p: RadioSignalDataset(p)
+        return lambda p: H5ImageDataset(p, sample_key="image", label_key="label")
     if task == "pos":
-        return lambda p: PositioningDataset(p)
+        return lambda p: H5ImageDataset(p, sample_key="features", label_key="label")
     if task == "radcom":
-        return lambda p: RadComDataset(p)
+        return lambda p: RadComOtaCache(p)
     if task == "uwb":
-        return lambda p: UwbDataset(p, as_complex=False)
-    if task in {"amc", "rml", "rfp", "deepbeam", "interf"}:
-        return lambda p: IqDataset(p, target_key="label")
+        return lambda p: UWBLoc(p, as_complex=False)
+    if task == "rml":
+        return lambda p: RMLCache(p)
+    if task == "rfp":
+        return lambda p: RFPDataset(p)
+    if task == "interf":
+        return lambda p: IcarusCache(p)
+    if task in {"amc", "deepbeam"}:
+        return lambda p: H5IQDataset(p, sample_key="sample", label_key="label")
     if task == "aoa":
-        return lambda p: IqDataset(p, target_key="target")
+        return lambda p: H5IQDataset(p, sample_key="sample", label_key="target")
     raise ValueError(f"Unsupported task: {task}")
 
 
@@ -77,11 +85,14 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
     if task == "radcom":
         return TaskInfo(
             name=task, modality="iq", target_type="classification",
-            num_classes=len(RADCOM_OTA_LABELS), in_chans=None,
+            num_classes=len(getattr(dataset, "label_pairs", getattr(dataset, "labels", [])) or []), in_chans=None,
         )
     if task == "pos":
-        coord_min = torch.tensor(dataset.norm.get("coord_nominal_min", []), dtype=torch.float32)
-        coord_max = torch.tensor(dataset.norm.get("coord_nominal_max", []), dtype=torch.float32)
+        coord_min = coord_max = torch.tensor([], dtype=torch.float32)
+        if hasattr(dataset, "h5_path"):
+            with h5py.File(dataset.h5_path, "r") as h5:
+                coord_min = torch.tensor(json.loads(h5.attrs.get("coord_nominal_min", "[]")), dtype=torch.float32)
+                coord_max = torch.tensor(json.loads(h5.attrs.get("coord_nominal_max", "[]")), dtype=torch.float32)
         sample, label = dataset[0]
         target_dim = int(label.numel()) if torch.is_tensor(label) else len(label)
         return TaskInfo(

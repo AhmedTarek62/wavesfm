@@ -5,7 +5,7 @@ from typing import Dict
 import torch
 from timm.utils import accuracy
 
-from wavesfm.datasets import RADCOM_OTA_LABELS
+from dataset_classes import RADCOM_OTA_LABELS
 from wavesfm.utils import AverageMeter, apply_lr, pretty_dict
 
 

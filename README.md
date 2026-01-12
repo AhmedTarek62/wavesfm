@@ -8,31 +8,29 @@ A lightweight, public-friendly entrypoint for reproducing our multimodal fine-tu
 - Positioning: `pos` (5G), `uwb`
 - RadCom OTA: `radcom`
 
-Dataset loaders live in `wavesfm/datasets.py` with clear names (`IqDataset`, `SensingDataset`, `PositioningDataset`, `RadioSignalDataset`, `RadComDataset`, `UwbDataset`).
+Dataset loaders are HDF5-only and live under `wavesfm/dataset_classes/`; `wavesfm/data.py` wires them up per task.
 
 ## Preprocessing
-Use the per-dataset scripts under `wavesfm/preprocessing/` to turn raw data into a single HDF5 file per split.
+Use the per-dataset scripts under `wavesfm/preprocessing/` (mirroring the original mae layout) to turn raw data into a single HDF5 file per split.
 
 Examples:
 ```bash
-# IQ tasks (amc/aoa/rml/rfp/deepbeam/interf)
-python wavesfm/preprocessing/preprocess_amc.py --data-path data/raw_iq/train_shards --output data/amc_train.h5
-python wavesfm/preprocessing/preprocess_amc.py --data-path data/raw_iq/val_shards --output data/amc_val.h5
-
 # CSI sensing
-python wavesfm/preprocessing/preprocess_sensing.py --data-path data/sensing/raw/train --output data/sensing_train.h5 --overwrite
+python wavesfm/preprocessing/preprocess_csi_sensing.py --csi-path data/sensing/raw/train --output data/sensing_train.h5
 
-# Radio signals (spectrograms)
-python wavesfm/preprocessing/preprocess_rfs.py --data-path data/rfs/raw --output data/rfs_train.h5 --overwrite
-
-# Positioning
-python wavesfm/preprocessing/preprocess_pos.py --data-path data/pos/raw/outdoor/train --output data/pos_train.h5 --scene outdoor
+# 5G positioning
+python wavesfm/preprocessing/preprocess_nr_positioning.py --data-path data/pos/raw/outdoor/train --output data/pos_train.h5 --scene outdoor
 
 # RadCom OTA
 python wavesfm/preprocessing/preprocess_radcom.py --input data/radcom/raw.h5 --output data/radcom_all.h5
 
 # UWB positioning
-python wavesfm/preprocessing/preprocess_uwb.py --root data/uwb/raw --environment indoor --output data/uwb_train.h5 --batch-size 64
+python wavesfm/preprocessing/preprocess_uwb_loc.py --root data/uwb/raw --environment indoor --output data/uwb_train.h5 --batch-size 64
+
+# RML (amc) / RF fingerprinting / interference (Icarus)
+python wavesfm/preprocessing/preprocess_rml.py --root data/rml --version 2016 --output data/rml_train.h5
+python wavesfm/preprocessing/preprocess_rfp.py --root data/rfp --output data/rfp_train.h5
+python wavesfm/preprocessing/preprocess_icarus.py --root data/icarus --output data/icarus_train.h5
 ```
 
 The IQ helper writes:
