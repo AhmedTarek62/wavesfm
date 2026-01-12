@@ -1,55 +1,81 @@
-# WavesFM fine-tuning
+# WavesFM
 
-Lightweight utilities for fine-tuning multimodal wireless models on cached `.h5` datasets. Preprocessing scripts build the caches; training never touches raw data.
+![WavesFM](wavesfm.png)
 
-## Tasks
-- Vision: `sensing`, `rfs`, `positioning`
-- IQ: `rml`, `rfp`, `interf`
-- CIR: `pos` (5G), `uwb`
-- Radar: `radcom`
+Lightweight fine-tuning package for WavesFM, a multimodal wireless foundation model, on various downstream tasks. The workflow is:
+1) preprocess raw dataset → 2) downlaod pretrained checkpoint → 3) train/eval from a single cache file.
 
-Loaders live in `dataset_classes/`; `data.py` wires them to tasks.
+## Package overview
+- `main_finetune.py`: CLI entrypoint for training and evaluation.
+- `data.py`: task registry + dataset wiring + task metadata.
+- `models_vit.py`: ViT-based model used across tasks.
+- `engine.py`: training loop, evaluation, and metrics.
+- `dataset_classes/`: minimal dataset loaders used by `data.py`.
+- `preprocessing/`: scripts that turn raw datasets into .h5 caches.
+- `lora.py`: optional LoRA adapters for attention projections.
+
+## Supported tasks
+Use the short name with `--task`:
+- `sensing` — human activity sensing from WiFi CSI (vision)
+- `rfs` — radio signal classification from spectrograms (vision).
+- `pos` — 5G NR positioning (vision).
+- `uwb` — UWB localization from CIR (IQ).
+- `radcom` — radar signal classification (IQ).
+- `rml` — automatic modulation classification (IQ).
+- `rfp` — RF fingerprinting (IQ).
+- `interf` — interference detection (IQ).
+
+## Data caches (what the code expects)
+Each task trains from a single `.h5` file that stores samples + targets (and optional metadata like label names or class weights). The exact dataset keys depend on the task, but conceptually:
+- vision-style tasks store `(C,H,W)` tensors plus an integer label
+- IQ-style tasks store `(2,C,T)` tensors plus either an integer label (classification) or a float target (regression)
+
+The training pipeline reads these caches and does no raw parsing.
 
 ## Preprocessing
-Per-dataset scripts under `preprocessing/` write one cache per split. Examples:
+Preprocessing scripts live under `preprocessing/`. They are dataset-specific, so use `--help` to see the expected raw layout and the required arguments.
+
+Generic patterns:
+- CSI sensing: `python preprocessing/preprocess_csi_sensing.py --csi-path <raw_dir> --output <cache.h5>`
+- Radio spectrograms: `python preprocessing/preprocess_rfs.py --data-path <raw_dir> --output <cache.h5>`
+- 5G positioning: `python preprocessing/preprocess_nr_positioning.py --data-path <raw_dir> --scene {outdoor|indoor} --output <cache.h5>`
+- RadCom OTA: `python preprocessing/preprocess_radcom.py --input <raw_file> --output <cache.h5>`
+- UWB: `python preprocessing/preprocess_uwb_loc.py --root <raw_root> --environment <env> --output <cache.h5>`
+
+## Training & evaluation
+Train:
 ```bash
-# CSI sensing
-python wavesfm/preprocessing/preprocess_csi_sensing.py --csi-path data/sensing/raw/train --output data/sensing_train.h5
-# Radio signals (spectrogram images)
-python wavesfm/preprocessing/preprocess_rfs.py --data-path data/rfs/raw --output data/rfs_train.h5
-# 5G positioning
-python wavesfm/preprocessing/preprocess_nr_positioning.py --data-path data/pos/raw/outdoor/train --output data/pos_train.h5 --scene outdoor
-# RadCom OTA
-python wavesfm/preprocessing/preprocess_radcom.py --input data/radcom/raw.h5 --output data/radcom_all.h5
-# UWB positioning
-python wavesfm/preprocessing/preprocess_uwb_loc.py --root data/uwb/raw --environment indoor --output data/uwb_train.h5
-# RML / RF fingerprinting (Powder) / interference (Icarus)
-python wavesfm/preprocessing/preprocess_rml.py --root data/rml --version 2016 --output data/rml_train.h5
-python wavesfm/preprocessing/preprocess_rfp.py --root data/rfp --output data/rfp_train.h5
-python wavesfm/preprocessing/preprocess_icarus.py --root data/icarus --output data/icarus_train.h5
+python main_finetune.py \
+  --task <task> \
+  --train-data <train.h5> \
+  --val-data <val.h5> \
+  --output-dir <run_dir>
 ```
 
-## Training
-Unified entrypoint:
+Evaluate only:
 ```bash
-python wavesfm/main_finetune.py \
-  --task amc \
-  --train-data data/amc_train.h5 \
-  --val-data data/amc_val.h5 \
-  --model vit_multi_small \
-  --batch-size 64 --epochs 50 \
-  --output-dir runs/amc-small
+python main_finetune.py \
+  --task <task> \
+  --train-data <train.h5> \
+  --val-data <val.h5> \
+  --eval-only
 ```
-Add `--lora --lora-rank 8 --lora-alpha 1.0` to enable LoRA adapters.
 
-Notes:
-- Training/eval only use cached files; no raw preprocessing happens in dataloaders.
-- Logging is JSONL to `output_dir/log.txt` plus checkpoints (`best.pth` and periodic `checkpoint_*.pth`).
-- `--eval-only` runs validation without training.
+Common flags:
+- `--model`: model name from `models_vit.py`.
+- `--finetune`: initialize from a pretrained checkpoint (loads model weights).
+- `--resume`: resume training from a WavesFM checkpoint (model + optimizer + scheduler).
+- `--lora`: enable LoRA adapters (`--lora-rank`, `--lora-alpha`).
+- `--val-split`: auto-split if you don’t provide `--val-data`.
 
-## Extending
-- Register new tasks in `data.py` (factory + metadata) and add a preprocessing helper that writes an `iq` or `image/features` dataset plus targets.
-- The training loop in `engine.py` is small and easy to adapt for extra metrics/behaviors.
+Outputs:
+- logs: `output_dir/log.txt` (JSONL)
+- checkpoints: `output_dir/best.pth` and periodic `output_dir/checkpoint_*.pth`
+
+## Adding a new task/dataset
+1) Write a preprocessing script that produces a cache file (samples + targets).
+2) Register a new task in `data.py` so `build_datasets()` knows which loader/keys to use and what output shape to expect.
+3) Train with `--task <your_task>`.
 
 ## Citation
 If you use this code, please cite:
@@ -61,21 +87,14 @@ If you use this code, please cite:
   year = {2025},
   url = {https://arxiv.org/abs/2511.15162}
 }
-
-@article{aboulfotouh2025image,
-  author  = {Aboulfotouh, Ahmed and Mohammed, Elsayed and Abou-Zeid, Hatem},
-  title   = {{6G} {WavesFM}: A Foundation Model for Sensing, Communication, and Localization},
-  journal = {IEEE Open J. Commun. Soc.},
-  year    = {2025},
-  volume  = {6},
-  doi     = {10.1109/OJCOMS.2025.3600616}
-}
 ```
 
+Please also credit the owners of datasets.
+
 ## Credits
-### Some of the code is adapted from these amazing repos.
-- timm-vit-lora: https://github.com/mnikitin/timm-vit-lora
+Some code is adapted from:
 - MAE: https://github.com/facebookresearch/mae
+- timm-vit-lora: https://github.com/mnikitin/timm-vit-lora
 - DeiT: https://github.com/facebookresearch/deit
 - Transformer utils: https://github.com/tensorflow/models/blob/master/official/nlp/transformer/model_utils.py
 - MoCo v3: https://github.com/facebookresearch/moco-v3
