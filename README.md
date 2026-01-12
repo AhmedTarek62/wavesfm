@@ -3,10 +3,10 @@
 Lightweight utilities for fine-tuning multimodal wireless models on cached `.h5` datasets. Preprocessing scripts build the caches; training never touches raw data.
 
 ## Tasks
-- Vision: `sensing`, `rfs`
-- IQ: `amc`, `aoa`, `rml`, `rfp` (Powder), `deepbeam`, `interf`
-- Positioning: `pos` (5G), `uwb`
-- RadCom OTA: `radcom`
+- Vision: `sensing`, `rfs`, `positioning`
+- IQ: `rml`, `rfp`, `interf`
+- CIR: `pos` (5G), `uwb`
+- Radar: `radcom`
 
 Loaders live in `dataset_classes/`; `data.py` wires them to tasks.
 
@@ -61,9 +61,19 @@ If you use this code, please cite:
   year = {2025},
   url = {https://arxiv.org/abs/2511.15162}
 }
+
+@article{aboulfotouh2025image,
+  author  = {Aboulfotouh, Ahmed and Mohammed, Elsayed and Abou-Zeid, Hatem},
+  title   = {{6G} {WavesFM}: A Foundation Model for Sensing, Communication, and Localization},
+  journal = {IEEE Open J. Commun. Soc.},
+  year    = {2025},
+  volume  = {6},
+  doi     = {10.1109/OJCOMS.2025.3600616}
+}
 ```
 
 ## Credits
+### Some of the code is adapted from these amazing repos.
 - timm-vit-lora: https://github.com/mnikitin/timm-vit-lora
 - MAE: https://github.com/facebookresearch/mae
 - DeiT: https://github.com/facebookresearch/deit
