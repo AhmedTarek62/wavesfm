@@ -39,14 +39,14 @@ def _load_data(root: Path, version: str):
 
 
 def preprocess_rml(
-    root: Path,
+    data_path: Path,
     version: str,
     output: Path,
     batch_size: int = 1024,
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root = Path(root)
+    root = Path(data_path)
     output = Path(output)
     if version not in STATS:
         raise ValueError("version must be '2016' or '2022'")
@@ -118,7 +118,7 @@ def preprocess_rml(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute RML dataset into a cache.")
-    p.add_argument("--root", required=True, help="Directory containing RML files (RML2016.10a_dict.pkl or RML22.01A).")
+    p.add_argument("--data-path", required=True, help="Directory containing RML files (RML2016.10a_dict.pkl or RML22.01A).")
     p.add_argument("--version", required=True, choices=["2016", "2022"], help="Dataset version to process.")
     p.add_argument("--output", required=True, help="Output path.")
     p.add_argument("--batch-size", type=int, default=1024, help="Chunk size for writes (default: 1024).")
@@ -136,7 +136,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_rml(
-        root=Path(args.root),
+        data_path=Path(args.data_path),
         version=args.version,
         output=Path(args.output),
         batch_size=args.batch_size,

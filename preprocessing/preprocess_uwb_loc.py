@@ -26,14 +26,14 @@ def _cir_to_np(raw_cir: Sequence) -> np.ndarray:
 
 
 def preprocess_uwb(
-    root: Path,
+    data_path: Path,
     environment: str,
     output: Path,
     batch_size: int = 1024,
     anchors: Iterable[str] = ANCHORS,
     channels: Iterable[str] = CHANNELS,
 ) -> Path:
-    env_dir = root / environment
+    env_dir = Path(data_path) / environment
     with (env_dir / "data.json").open("r") as f:
         data = json.load(f)
     measurements = data["measurements"]  # location -> anchor_id -> channel -> list[dict]
@@ -134,7 +134,7 @@ def preprocess_uwb(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Preprocess UWB dataset JSON into a cache.")
-    p.add_argument("--root", default="~/data/uwb_loc", help="Dataset root containing environment folders.")
+    p.add_argument("--data-path", default="~/data/uwb_loc", help="Dataset root containing environment folders.")
     p.add_argument("--environment", default="environment0", help="Environment folder name (e.g., environment0).")
     p.add_argument("--output", default=None, help="Output path (default: <root>/<environment>_clean.h5).")
     p.add_argument("--batch-size", type=int, default=1024, help="Number of samples per write batch.")
@@ -145,9 +145,9 @@ def main() -> None:
     args = parse_args()
     root = Path(args.root).expanduser()
     env = args.environment
-    output = Path(args.output).expanduser() if args.output else root / f"{env}_clean.h5"
+    output = Path(args.output).expanduser() if args.output else Path(args.data_path) / f"{env}_clean.h5"
 
-    out = preprocess_uwb(root, env, output, args.batch_size)
+    out = preprocess_uwb(Path(args.data_path).expanduser(), env, output, args.batch_size)
     print(f"Wrote cleaned dataset to {out}")
 
 

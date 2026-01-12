@@ -115,7 +115,7 @@ def _collect_items(root: Path, csv_subdir: str, iq_subdir: str) -> List[dict]:
 
 
 def preprocess_icarus(
-    root: Path,
+    data_path: Path,
     output: Path,
     max_len: int = 4096,
     csv_subdir: str = "Metadata",
@@ -123,7 +123,7 @@ def preprocess_icarus(
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root = Path(root)
+    root = Path(data_path)
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output}")
@@ -186,7 +186,7 @@ def preprocess_icarus(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute Icarus Powder interference detection cache.")
-    p.add_argument("--root", required=True, help="Root directory containing batch folders.")
+    p.add_argument("--data-path", required=True, help="Root directory containing batch folders.")
     p.add_argument("--output", required=True, help="Output HDF5 path.")
     p.add_argument("--max-len", type=int, default=4096, help="Center-cropped complex length (default: 4096).")
     p.add_argument("--csv-subdir", default="Metadata", help="Metadata subdirectory name (default: Metadata).")
@@ -205,7 +205,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_icarus(
-        root=Path(args.root),
+        data_path=Path(args.data_path),
         output=Path(args.output),
         max_len=args.max_len,
         csv_subdir=args.csv_subdir,

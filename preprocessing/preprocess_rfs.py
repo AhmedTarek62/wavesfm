@@ -21,7 +21,7 @@ LABELS = [
 
 
 def preprocess_rfs(
-    root_dir: Path,
+    data_path: Path,
     output: Path,
     img_size: int = 224,
     batch_size: int = 512,
@@ -29,7 +29,7 @@ def preprocess_rfs(
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root_dir = Path(root_dir)
+    root_dir = Path(data_path)
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output}")

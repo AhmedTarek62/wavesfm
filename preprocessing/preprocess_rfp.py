@@ -73,7 +73,7 @@ def _list_records(root: Path, allowed_labels: List[str]) -> List[Dict]:
 
 
 def preprocess_rfp(
-    root: Path,
+    data_path: Path,
     output: Path,
     chunk_len: int = 512,
     hop_len: Optional[int] = None,
@@ -81,7 +81,7 @@ def preprocess_rfp(
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root = Path(root)
+    root = Path(data_path)
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output}")
@@ -185,7 +185,7 @@ def preprocess_rfp(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute RF fingerprinting cache from .bin/.json pairs.")
-    p.add_argument("--root", required=True, help="Directory containing matching *.bin/*.json recordings.")
+    p.add_argument("--data-path", required=True, help="Directory containing matching *.bin/*.json recordings.")
     p.add_argument("--output", required=True, help="Output HDF5 path.")
     p.add_argument("--chunk-len", type=int, default=512, help="Complex samples per chunk (default: 512).")
     p.add_argument("--hop-len", type=int, default=None, help="Hop between chunks (default: chunk-len).")
@@ -204,7 +204,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_rfp(
-        root=Path(args.root),
+        data_path=Path(args.data_path),
         output=Path(args.output),
         chunk_len=args.chunk_len,
         hop_len=args.hop_len,

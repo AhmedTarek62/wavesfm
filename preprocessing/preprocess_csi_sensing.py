@@ -41,14 +41,14 @@ def _label_from_name(name: str) -> int:
 
 
 def preprocess_csi_sensing(
-    root_dir: Path,
+    data_path: Path,
     output: Path,
     img_size: int = 224,
     batch_size: int = 256,
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root_dir = Path(root_dir)
+    root_dir = Path(data_path)
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output}")
@@ -106,7 +106,7 @@ def preprocess_csi_sensing(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute CSI sensing tensors for fine-tuning/eval.")
-    p.add_argument("--csi-path", required=True, help="Directory containing sensing CSI .mat files.")
+    p.add_argument("--data-path", required=True, help="Directory containing sensing CSI .mat files.")
     p.add_argument("--output", required=True, help="Output path (e.g., data/csi_sensing_cache.h5).")
     p.add_argument("--img-size", type=int, default=224, help="Resize target (default: 224).")
     p.add_argument("--batch-size", type=int, default=256, help="Chunk size for writes (default: 256).")
@@ -124,7 +124,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_csi_sensing(
-        root_dir=Path(args.csi_path),
+        data_path=Path(args.data_path),
         output=Path(args.output),
         img_size=args.img_size,
         batch_size=args.batch_size,
