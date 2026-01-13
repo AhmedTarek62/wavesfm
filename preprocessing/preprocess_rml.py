@@ -96,7 +96,7 @@ def preprocess_rml(
         for mod, snr in tqdm(keys, desc="Caching RML"):
             arr = data[(mod, snr)].astype(np.float32, copy=False)
             n = arr.shape[0]
-            arr = (arr - mu[..., None]) / std[..., None]  # broadcast over channel/time
+            arr = (arr - mu[None, ...]) / std[None, ...]  # broadcast over channel/time
             lbl_idx = LABELS.index(mod)
             labels = np.full((n,), lbl_idx, dtype=np.int64)
             counts[lbl_idx] += n
