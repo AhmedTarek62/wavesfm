@@ -16,6 +16,20 @@ At a high level:
 - `preprocessing/`: scripts that turn raw datasets into cache files (stored as `.h5`).
 - `lora.py`: optional LoRA adapters for attention projections.
 
+## Installation
+`requirements.txt` pins the core dependencies for reproducibility. Install PyTorch/torchvision separately to match your CUDA stack.
+
+```bash
+git clone https://github.com/AhmedTarek62/wavesfm.git
+cd wavesfm
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+# Install PyTorch for your CUDA version (see pytorch.org), then:
+pip install torch torchvision
+pip install -r requirements.txt
+```
+
 ## Supported tasks
 Use the short name with `--task`:
 - `sensing` — CSI sensing human activity classification (image-like CSI tensors).

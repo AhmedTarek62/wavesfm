@@ -59,6 +59,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--warmup-epochs", type=float, default=5.0, help="Linear warmup duration (in epochs).")
     p.add_argument("--smoothing", type=float, default=0.0, help="Label smoothing for classification.")
     p.add_argument("--max-grad-norm", type=float, default=None, help="Gradient clipping (L2 norm).")
+    p.add_argument("--class-weights", action="store_true", help="Use class weights for classification loss.")
 
     # IO
     p.add_argument("--output-dir", default="wavesfm_runs", help="Where to store checkpoints and logs.")
@@ -186,7 +187,7 @@ def main():
         ce_kwargs = {}
         if args.smoothing and args.smoothing > 0.0:
             ce_kwargs["label_smoothing"] = float(args.smoothing)
-        if hasattr(train_ds, "class_weights"):
+        if args.class_weights and hasattr(train_ds, "class_weights"):
             ce_kwargs["weight"] = train_ds.class_weights.to(device)
         criterion = torch.nn.CrossEntropyLoss(**ce_kwargs)
     else:

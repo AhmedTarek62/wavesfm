@@ -1,0 +1,8 @@
+# Install PyTorch/torchvision separately for your CUDA version (see pytorch.org).
+timm==1.0.11
+h5py==3.14.0
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.16.2
+pillow==11.3.0
+tqdm==4.67.1
