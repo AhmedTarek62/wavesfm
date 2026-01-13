@@ -117,8 +117,7 @@ def preprocess_positioning(
         h5.attrs["std"] = json.dumps([float(x) for x in stats["std"]])
         h5.attrs["coord_nominal_min"] = json.dumps([float(x) for x in stats["coord_min"]])
         h5.attrs["coord_nominal_max"] = json.dumps([float(x) for x in stats["coord_max"]])
-        h5.attrs["class_weights"] = json.dumps([])  # placeholder for interface parity
-
+        
         for idx, fname in enumerate(tqdm(data_files, desc="Caching positioning")):
             with h5py.File(datapath / fname, "r") as f:
                 feat = f["features"][:]

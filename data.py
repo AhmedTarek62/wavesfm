@@ -48,7 +48,7 @@ def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
     if task == "rfs":
         return lambda p: ImageDataset(p, sample_key="image", label_key="label")
     if task == "pos":
-        return lambda p: ImageDataset(p, sample_key="features", label_key="label")
+        return lambda p: ImageDataset(p, sample_key="features", label_key="label", label_dtype=torch.float32)
     if task == "radcom":
         return lambda p: RadComOta(p)
     if task == "uwb":

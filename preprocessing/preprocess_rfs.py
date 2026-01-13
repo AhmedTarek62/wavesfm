@@ -114,7 +114,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_rfs(
-        root_dir=Path(args.data_path),
+        data_path=Path(args.data_path),
         output=Path(args.output),
         img_size=args.img_size,
         batch_size=args.batch_size,

@@ -24,11 +24,13 @@ class IQDataset(Dataset):
         sample_key: str = "sample",
         label_key: str = "label",
         *,
+        label_dtype: torch.dtype | None = torch.long,
         meta_keys: Iterable[str] | None = None,
     ):
         self.h5_path = Path(h5_path)
         self.sample_key = sample_key
         self.label_key = label_key
+        self.label_dtype = label_dtype
         self.meta_keys = tuple(meta_keys) if meta_keys is not None else ()
         self._h5: Optional[h5py.File] = None
 
@@ -51,7 +53,10 @@ class IQDataset(Dataset):
     def __getitem__(self, idx: int):
         h5 = self._file()
         sample = torch.as_tensor(h5[self.sample_key][idx])
-        label = torch.as_tensor(h5[self.label_key][idx], dtype=torch.long)
+        if self.label_dtype is None:
+            label = torch.as_tensor(h5[self.label_key][idx])
+        else:
+            label = torch.as_tensor(h5[self.label_key][idx], dtype=self.label_dtype)
 
         if not self.meta_keys:
             return sample, label
@@ -81,11 +86,13 @@ class ImageDataset(Dataset):
         sample_key: str = "image",
         label_key: str = "label",
         *,
+        label_dtype: torch.dtype | None = torch.long,
         meta_keys: Iterable[str] | None = None,
     ):
         self.h5_path = Path(h5_path)
         self.sample_key = sample_key
         self.label_key = label_key
+        self.label_dtype = label_dtype
         self.meta_keys = tuple(meta_keys) if meta_keys is not None else ()
         self._h5: Optional[h5py.File] = None
 
@@ -108,7 +115,10 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx: int):
         h5 = self._file()
         sample = torch.as_tensor(h5[self.sample_key][idx])
-        label = torch.as_tensor(h5[self.label_key][idx], dtype=torch.long)
+        if self.label_dtype is None:
+            label = torch.as_tensor(h5[self.label_key][idx])
+        else:
+            label = torch.as_tensor(h5[self.label_key][idx], dtype=self.label_dtype)
 
         if not self.meta_keys:
             return sample, label
