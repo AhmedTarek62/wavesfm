@@ -43,9 +43,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iq-target-len", type=int, default=256, help="Target IQ length after downsample.")
     p.add_argument("--freeze-encoder", action="store_true", help="Freeze the transformer encoder blocks.")
     p.add_argument("--frozen-blocks", type=int, default=None, help="Freeze only the first N blocks.")
-    p.add_argument("--use_conditional_ln", action="store_true", help="Enable modality-specific conditional LN.")
-    p.add_argument("--strict_probe", action="store_true", help="Freeze tokenizer & conditional LN when encoder is frozen.")
-    p.add_argument("--sl_baseline", action="store_true", help="Disable encoder freezing (train full model).")
+    p.add_argument("--use-conditional-ln", action="store_true", help="Enable modality-specific conditional LN.")
+    p.add_argument("--strict-probe", action="store_true", help="Freeze tokenizer & conditional LN when encoder is frozen.")
+    p.add_argument("--sl-baseline", action="store_true", help="Disable encoder freezing (train full model).")
 
     # Optimization
     p.add_argument("--epochs", type=int, default=50)
