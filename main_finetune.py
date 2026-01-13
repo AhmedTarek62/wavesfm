@@ -17,6 +17,7 @@ from utils import (
     JsonlLogger,
     count_parameters,
     cosine_schedule,
+    param_groups_lrd,
     pretty_dict,
     set_seed,
 )
@@ -49,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--weight-decay", type=float, default=0.05)
     p.add_argument("--lr", type=float, default=None, help="Absolute learning rate. If None, use blr scaling.")
     p.add_argument("--blr", type=float, default=1e-3, help="Base LR: lr = blr * batch_size * accum / 256.")
+    p.add_argument("--layer-decay", type=float, default=0.75, help="Layer-wise LR decay (1.0 disables).")
     p.add_argument("--min-lr", type=float, default=1e-6, help="Cosine schedule floor.")
     p.add_argument("--warmup-epochs", type=float, default=5.0, help="Linear warmup duration (in epochs).")
     p.add_argument("--max-grad-norm", type=float, default=None, help="Gradient clipping (L2 norm).")
@@ -172,7 +174,12 @@ def main():
     eff_batch = args.batch_size * args.accum_steps
     if args.lr is None:
         args.lr = args.blr * eff_batch / 256
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    param_groups = param_groups_lrd(
+        model,
+        args.weight_decay,
+        layer_decay=args.layer_decay,
+    )
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     scaler = torch.amp.GradScaler(device == "cuda")
 
     steps_per_epoch = max(1, len(train_loader))

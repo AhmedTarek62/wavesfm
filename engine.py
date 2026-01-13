@@ -42,7 +42,7 @@ def train_one_epoch(
 
     optimizer.zero_grad(set_to_none=True)
     for step, batch in enumerate(data_loader):
-        if lr_schedule:
+        if lr_schedule and step % accum_steps == 0:
             apply_lr(optimizer, lr_schedule[global_step])
 
         samples, targets = _unpack_batch(batch)

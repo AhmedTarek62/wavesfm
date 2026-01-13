@@ -37,8 +37,8 @@ def cosine_schedule(base_lr: float, min_lr: float, steps: int, warmup_steps: int
     warmup_steps = min(warmup_steps, steps)
     sched = []
     for step in range(steps):
-        if step < warmup_steps:
-            lr = base_lr * (step + 1) / max(1, warmup_steps)
+        if warmup_steps > 0 and step < warmup_steps:
+            lr = base_lr * step / warmup_steps
         else:
             progress = (step - warmup_steps) / max(1, steps - warmup_steps)
             lr = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
@@ -48,7 +48,65 @@ def cosine_schedule(base_lr: float, min_lr: float, steps: int, warmup_steps: int
 
 def apply_lr(optimizer: torch.optim.Optimizer, lr: float) -> None:
     for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
+        scale = param_group.get("lr_scale", 1.0)
+        param_group["lr"] = lr * scale
+
+
+def get_layer_id_for_vit(name: str, num_layers: int) -> int:
+    if name == "cls_token" or "pos_embed" in name:
+        return 0
+    if name.startswith((
+        "patch_embed",
+        "vis_patch_embed",
+        "iq_segment_embed",
+        "iq_ant_embed",
+        "iq_downsampler",
+        "channel_adapter",
+    )):
+        return 0
+    if name.startswith("blocks"):
+        return int(name.split(".")[1]) + 1
+    return num_layers
+
+
+def param_groups_lrd(model, weight_decay=0.05, no_weight_decay_list=None, layer_decay=0.75):
+    if no_weight_decay_list is None:
+        no_weight_decay_list = []
+
+    param_groups = {}
+    if hasattr(model, "blocks"):
+        num_layers = len(model.blocks) + 1
+    else:
+        num_layers = 0
+
+    layer_scales = (
+        [layer_decay ** (num_layers - i) for i in range(num_layers + 1)]
+        if num_layers > 0 else [1.0]
+    )
+
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        if p.ndim == 1 or name in no_weight_decay_list:
+            g_decay = "no_decay"
+            this_decay = 0.0
+        else:
+            g_decay = "decay"
+            this_decay = weight_decay
+
+        layer_id = get_layer_id_for_vit(name, num_layers) if num_layers > 0 else 0
+        group_name = f"layer_{layer_id}_{g_decay}"
+
+        if group_name not in param_groups:
+            lr_scale = layer_scales[layer_id] if num_layers > 0 else 1.0
+            param_groups[group_name] = {
+                "lr_scale": lr_scale,
+                "weight_decay": this_decay,
+                "params": [],
+            }
+        param_groups[group_name]["params"].append(p)
+
+    return list(param_groups.values())
 
 
 def count_parameters(model: torch.nn.Module) -> Tuple[int, int]:
