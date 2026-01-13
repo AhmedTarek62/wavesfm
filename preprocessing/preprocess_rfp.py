@@ -77,6 +77,7 @@ def preprocess_rfp(
     output: Path,
     chunk_len: int = 512,
     hop_len: Optional[int] = None,
+    batch_size: int = 1024,
     allowed_labels: Optional[Iterable[str]] = None,
     compression: str | None = None,
     overwrite: bool = False,
@@ -115,21 +116,28 @@ def preprocess_rfp(
     sum_ch = np.zeros(2, dtype=np.float64)
     sumsq_ch = np.zeros(2, dtype=np.float64)
     total_vals = len(index) * chunk_len
+    current_rec_id = None
+    mm = None
     for entry in tqdm(index, desc="Pass 1: stats"):
-        rec = records[entry["rec_id"]]
-        mm = np.memmap(rec["bin_path"], mode="r", dtype=np.complex64)
+        rec_id = entry["rec_id"]
+        if rec_id != current_rec_id:
+            rec = records[rec_id]
+            mm = np.memmap(rec["bin_path"], mode="r", dtype=np.complex64)
+            current_rec_id = rec_id
         seg_c = mm[entry["start"] : entry["start"] + entry["length"]]
-        x = np.empty((2, entry["length"]), dtype=np.float32)
-        x[0] = seg_c.real.astype(np.float32, copy=False)
-        x[1] = seg_c.imag.astype(np.float32, copy=False)
-        sum_ch += x.sum(axis=1)
-        sumsq_ch += np.square(x, dtype=np.float64).sum(axis=1)
+        real = seg_c.real.astype(np.float32, copy=False)
+        imag = seg_c.imag.astype(np.float32, copy=False)
+        sum_ch[0] += real.sum()
+        sum_ch[1] += imag.sum()
+        sumsq_ch[0] += np.square(real, dtype=np.float64).sum()
+        sumsq_ch[1] += np.square(imag, dtype=np.float64).sum()
     mean = sum_ch / float(total_vals)
     var = sumsq_ch / float(total_vals) - np.square(mean)
     std = np.sqrt(np.clip(var, 1e-12, None))
 
     n = len(index)
-    chunk = min(512, n)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, n)
     with h5py.File(output, "w") as h5:
         h5.create_dataset(
             "sample",
@@ -157,23 +165,44 @@ def preprocess_rfp(
         h5.attrs["mean"] = mean.astype(np.float32)
         h5.attrs["std"] = std.astype(np.float32)
 
-        for idx, entry in enumerate(tqdm(index, desc="Caching RF fingerprinting")):
-            rec = records[entry["rec_id"]]
-            mm = np.memmap(rec["bin_path"], mode="r", dtype=np.complex64)
-            seg_c = mm[entry["start"] : entry["start"] + entry["length"]]
-            x = np.empty((2, entry["length"]), dtype=np.float32)
-            x[0] = seg_c.real.astype(np.float32, copy=False)
-            x[1] = seg_c.imag.astype(np.float32, copy=False)
-            x[0] = (x[0] - mean[0]) / std[0]
-            x[1] = (x[1] - mean[1]) / std[1]
+        current_rec_id = None
+        mm = None
+        for base_idx in tqdm(range(0, n, batch), desc="Caching RF fingerprinting"):
+            end_idx = min(base_idx + batch, n)
+            batch_len = end_idx - base_idx
+            samples = np.empty((batch_len, 2, 1, chunk_len), dtype=np.float32)
+            labels = np.empty((batch_len,), dtype=np.int64)
+            starts = np.empty((batch_len,), dtype=np.int64)
+            sample_rates = np.empty((batch_len,), dtype=np.float32)
+            center_freqs = np.empty((batch_len,), dtype=np.float32)
+            source_files: List[str] = [""] * batch_len
 
-            h5["sample"][idx] = x[:, None, :]
-            h5["label"][idx] = rec["label_idx"]
-            counts[rec["label_idx"]] += 1
-            h5["source_file"][idx] = rec["stem"]
-            h5["start"][idx] = entry["start"]
-            h5["sample_rate"][idx] = rec["sample_rate"] if rec["sample_rate"] is not None else np.nan
-            h5["center_freq"][idx] = rec["center_freq"] if rec["center_freq"] is not None else np.nan
+            for off, entry in enumerate(index[base_idx:end_idx]):
+                rec_id = entry["rec_id"]
+                if rec_id != current_rec_id:
+                    rec = records[rec_id]
+                    mm = np.memmap(rec["bin_path"], mode="r", dtype=np.complex64)
+                    current_rec_id = rec_id
+                seg_c = mm[entry["start"] : entry["start"] + entry["length"]]
+                real = seg_c.real.astype(np.float32, copy=False)
+                imag = seg_c.imag.astype(np.float32, copy=False)
+                samples[off, 0, 0, :] = (real - mean[0]) / std[0]
+                samples[off, 1, 0, :] = (imag - mean[1]) / std[1]
+
+                labels[off] = rec["label_idx"]
+                counts[rec["label_idx"]] += 1
+                source_files[off] = rec["stem"]
+                starts[off] = entry["start"]
+                sample_rates[off] = rec["sample_rate"] if rec["sample_rate"] is not None else np.nan
+                center_freqs[off] = rec["center_freq"] if rec["center_freq"] is not None else np.nan
+
+            sl = slice(base_idx, end_idx)
+            h5["sample"][sl] = samples
+            h5["label"][sl] = labels
+            h5["source_file"][sl] = source_files
+            h5["start"][sl] = starts
+            h5["sample_rate"][sl] = sample_rates
+            h5["center_freq"][sl] = center_freqs
 
         freq = counts.astype(np.float64) / max(1, counts.sum())
         weights = np.where(freq > 0, 1.0 / freq, 0.0)
@@ -189,6 +218,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output", required=True, help="Output HDF5 path.")
     p.add_argument("--chunk-len", type=int, default=512, help="Complex samples per chunk (default: 512).")
     p.add_argument("--hop-len", type=int, default=None, help="Hop between chunks (default: chunk-len).")
+    p.add_argument("--batch-size", type=int, default=1024, help="Samples to write per batch (default: 1024).")
     p.add_argument("--labels", type=str, nargs="*", default=None, help="Allowed transmitter labels (default presets).")
     p.add_argument(
         "--compression",
@@ -208,6 +238,7 @@ def main() -> None:
         output=Path(args.output),
         chunk_len=args.chunk_len,
         hop_len=args.hop_len,
+        batch_size=args.batch_size,
         allowed_labels=args.labels,
         compression=comp,
         overwrite=args.overwrite,
