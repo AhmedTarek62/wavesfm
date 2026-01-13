@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
+from timm.layers import trunc_normal_
 
 import models_vit
 from data import SUPPORTED_TASKS, build_datasets
@@ -42,6 +43,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iq-target-len", type=int, default=256, help="Target IQ length after downsample.")
     p.add_argument("--freeze-encoder", action="store_true", help="Freeze the transformer encoder blocks.")
     p.add_argument("--frozen-blocks", type=int, default=None, help="Freeze only the first N blocks.")
+    p.add_argument("--use_conditional_ln", action="store_true", help="Enable modality-specific conditional LN.")
+    p.add_argument("--strict_probe", action="store_true", help="Freeze tokenizer & conditional LN when encoder is frozen.")
+    p.add_argument("--sl_baseline", action="store_true", help="Disable encoder freezing (train full model).")
 
     # Optimization
     p.add_argument("--epochs", type=int, default=50)
@@ -53,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--layer-decay", type=float, default=0.75, help="Layer-wise LR decay (1.0 disables).")
     p.add_argument("--min-lr", type=float, default=1e-6, help="Cosine schedule floor.")
     p.add_argument("--warmup-epochs", type=float, default=5.0, help="Linear warmup duration (in epochs).")
+    p.add_argument("--smoothing", type=float, default=0.0, help="Label smoothing for classification.")
     p.add_argument("--max-grad-norm", type=float, default=None, help="Gradient clipping (L2 norm).")
 
     # IO
@@ -85,13 +90,12 @@ def build_model(args: argparse.Namespace, task_info) -> torch.nn.Module:
         iq_segment_len=args.iq_segment_len,
         iq_downsample=args.iq_downsample,
         iq_target_len=args.iq_target_len,
+        use_conditional_ln=args.use_conditional_ln,
     )
 
     if args.lora:
         model = create_lora_model(model, lora_rank=args.lora_rank, lora_alpha=args.lora_alpha)
 
-    if args.freeze_encoder:
-        model.freeze_encoder(args.frozen_blocks)
     return model
 
 
@@ -152,19 +156,36 @@ def main():
         drop_last=False,
     )
 
-    model = build_model(args, task_info).to(device)
-    total_params, trainable_params = count_parameters(model)
-    print(f"[model] {args.model} total={total_params/1e6:.2f}M trainable={trainable_params/1e6:.2f}M")
-
+    model = build_model(args, task_info)
     if args.finetune:
         ckpt = torch.load(args.finetune, map_location="cpu", weights_only=False)
         state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
         msg = model.load_state_dict(state, strict=False)
         print(f"[init] loaded finetune checkpoint {args.finetune}")
         print(msg)
+        if hasattr(model, "head") and isinstance(model.head, torch.nn.Linear):
+            trunc_normal_(model.head.weight, std=2e-5)
+
+    freeze_encoder = args.freeze_encoder or not args.sl_baseline
+    if freeze_encoder:
+        if args.lora and hasattr(model, "freeze_encoder_lora"):
+            model.freeze_encoder_lora()
+        elif args.frozen_blocks is not None:
+            model.freeze_encoder(args.frozen_blocks)
+        else:
+            model.freeze_encoder()
+        if not args.strict_probe:
+            model.unfreeze_tokenizer()
+            model.unfreeze_conditional_ln()
+
+    model = model.to(device)
+    total_params, trainable_params = count_parameters(model)
+    print(f"[model] {args.model} total={total_params/1e6:.2f}M trainable={trainable_params/1e6:.2f}M")
 
     if task_info.target_type == "classification":
         ce_kwargs = {}
+        if args.smoothing and args.smoothing > 0.0:
+            ce_kwargs["label_smoothing"] = float(args.smoothing)
         if hasattr(train_ds, "class_weights"):
             ce_kwargs["weight"] = train_ds.class_weights.to(device)
         criterion = torch.nn.CrossEntropyLoss(**ce_kwargs)

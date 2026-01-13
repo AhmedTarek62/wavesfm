@@ -72,13 +72,13 @@ def _load_class_weights(h5_path: Path) -> torch.Tensor | None:
 
 def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
     if task == "sensing":
-        num_classes = len(getattr(dataset, "labels", [])) or 6
+        num_classes = 6
         return TaskInfo(
             name=task, modality="vision", target_type="classification",
             num_outputs=num_classes, in_chans=3,
         )
     if task == "rfs":
-        num_classes = len(getattr(dataset, "labels", [])) or 20
+        num_classes = 20
         return TaskInfo(
             name=task, modality="vision", target_type="classification",
             num_outputs=num_classes, in_chans=1,
@@ -86,7 +86,7 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
     if task == "radcom":
         return TaskInfo(
             name=task, modality="iq", target_type="classification",
-            num_outputs=len(getattr(dataset, "label_pairs", getattr(dataset, "labels", [])) or []), in_chans=None,
+            num_outputs=9, in_chans=None,
         )
     if task == "pos":
         coord_min = coord_max = torch.tensor([], dtype=torch.float32)
@@ -109,24 +109,14 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
             num_outputs=target_dim, in_chans=None,
             coord_min=dataset.loc_min, coord_max=dataset.loc_max,
         )
-    if task == "amc":
-        num_classes = len(getattr(dataset, "labels", [])) or 7
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
-    if task == "aoa":
-        sample, target = dataset[0]
-        target_dim = int(target.numel()) if torch.is_tensor(target) else len(target)
-        return TaskInfo(name=task, modality="iq", target_type="regression", num_outputs=target_dim)
     if task == "rml":
-        num_classes = len(getattr(dataset, "labels", [])) or 11
+        num_classes = 11
         return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "rfp":
-        num_classes = len(getattr(dataset, "labels", [])) or 4
-        return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
-    if task == "deepbeam":
-        num_classes = len(getattr(dataset, "labels", [])) or 5
+        num_classes = 4
         return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "interf":
-        num_classes = len(getattr(dataset, "labels", [])) or 3
+        num_classes = 3
         return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     raise ValueError(f"Unsupported task: {task}")
 

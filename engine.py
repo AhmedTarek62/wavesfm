@@ -53,6 +53,8 @@ def train_one_epoch(
             outputs = model(samples)
             loss = criterion(outputs, targets)
 
+        loss_value = loss.item()
+        loss = loss / accum_steps
         scaler.scale(loss).backward()
         if (step + 1) % accum_steps == 0:
             if max_norm is not None:
@@ -62,7 +64,7 @@ def train_one_epoch(
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-        loss_meter.update(loss.item(), n=samples.size(0))
+        loss_meter.update(loss_value, n=samples.size(0))
         if task_type == "classification":
             acc1, _ = accuracy(outputs, targets, topk=(1, min(3, outputs.shape[1])))
             acc_meter.update(acc1.item(), n=samples.size(0))
