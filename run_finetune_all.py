@@ -177,16 +177,15 @@ def parse_args():
 
 def _build_data_paths(root: Path) -> dict:
     return {
-        "pos": root / "5G_NR_Positioning.h5",
-        "rfs": root / "radio_sig_identification.h5",
-        "sensing": root / "NTU-Fi_HAR.h5",
-        "rfp": root / "GlobecomPOWDER.h5",
-        "interf": root / "icarus_split.h5",
-        "rml": root / "RML.h5",
-        "uwb": root / "uwb_loc_environment0_clean.h5",
-        "radcom": root / "RadComOta2p45GHz_preprocessed.h5",
+        "pos": root / "nrpos-outdoor.h5",
+        "rfs": root / "rfs.h5",
+        "sensing": root / "has.h5",
+        "rfp": root / "rfp.h5",
+        "interf": root / "icarus.h5",
+        "rml": root / "rml22.h5",
+        "uwb": root / "environment.h5",
+        "radcom": root / "radcom.h5",
     }
-
 
 def _apply_overrides(data_paths: dict, overrides: list):
     for entry in overrides:
