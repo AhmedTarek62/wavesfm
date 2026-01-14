@@ -97,31 +97,31 @@ def _pick_best_entry(entries: list[dict]) -> dict | None:
 def parse_args():
     p = argparse.ArgumentParser(description="Sweep WavesFM finetuning runs.")
     p.add_argument(
-        "--data_root",
+        "--data-root",
         type=Path,
         default=DEFAULT_DATA_ROOT,
         help="Base directory containing finetune caches.",
     )
     p.add_argument(
-        "--output_root",
+        "--output-root",
         type=Path,
         default=DEFAULT_OUTPUT_ROOT,
         help="Base directory to save finetune checkpoints/logs.",
     )
     p.add_argument(
-        "--ckpt_path",
+        "--ckpt-path",
         type=Path,
         default=DEFAULT_CKPT,
         help="Pretrained checkpoint to finetune from.",
     )
     p.add_argument(
-        "--ckpt_name",
+        "--ckpt-name",
         type=str,
         default=DEFAULT_MODEL_NAME,
         help="Name tag used in output folder/run names.",
     )
     p.add_argument(
-        "--num_workers",
+        "--num-workers",
         type=int,
         default=DEFAULT_NUM_WORKERS,
         help="DataLoader workers.",
