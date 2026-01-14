@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 # Defaults (override via CLI)
 DEFAULT_DATA_ROOT = Path("/home/ahmed/data/finetuning")
 DEFAULT_OUTPUT_ROOT = Path("/home/ahmed/runs/wavesfm-finetune")
-DEFAULT_CKPT = Path("/home/ahmed/dev/mae_local/multimodal-results/checkpoint-799-csi.pth")
+DEFAULT_CKPT = ''
 DEFAULT_MODEL_NAME = "sm"
 
 DEFAULT_TASKS = ("sensing", "pos", "rfs", "interf", "rfp", "rml", "uwb", "radcom")
