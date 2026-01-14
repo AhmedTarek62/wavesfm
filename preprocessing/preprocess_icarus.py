@@ -118,6 +118,7 @@ def preprocess_icarus(
     data_path: Path,
     output: Path,
     max_len: int = 4096,
+    batch_size: int = 256,
     csv_subdir: str = "Metadata",
     iq_subdir: str = "IQ",
     compression: str | None = None,
@@ -134,7 +135,8 @@ def preprocess_icarus(
         raise RuntimeError(f"No (csv,bin) pairs found under {root}")
 
     n = len(items)
-    chunk = min(256, n)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, n)
     counts = np.zeros(3, dtype=np.int64)  # LTE=0, DSSS_mod log2 variants
     with h5py.File(output, "w") as h5:
         h5.create_dataset(
@@ -159,22 +161,39 @@ def preprocess_icarus(
         h5.attrs["std"] = json.dumps([float(x) for x in STD])
         h5.attrs["max_len"] = int(max_len)
 
-        for idx, it in enumerate(tqdm(items, desc="Caching Icarus")):
-            z = _load_interleaved_iq(it["bin"], it["row"])
-            x = np.stack([z.real, z.imag], axis=0).astype(np.float32)
-            midpoint = x.shape[1] // 2
-            if x.shape[1] < max_len:
-                raise ValueError(f"Signal shorter than max_len at {it['bin']}")
-            x = x[:, midpoint - max_len // 2: midpoint + max_len // 2]
-            x = (x - MU[:, None]) / STD[:, None]
+        for start in tqdm(range(0, n, batch), desc="Caching Icarus", unit="batch"):
+            end = min(start + batch, n)
+            batch_items = items[start:end]
+            batch_len = len(batch_items)
+            samples = np.empty((batch_len, 2, 1, max_len), dtype=np.float32)
+            labels = np.empty((batch_len,), dtype=np.int64)
+            bands = np.empty((batch_len,), dtype=np.int8)
+            fs_vals = np.empty((batch_len,), dtype=np.float32)
+            src_files: List[str] = [""] * batch_len
 
-            h5["sample"][idx] = x[:, None, :]
-            lbl = _encode_label(it["row"].get("Signal_Type", ""), it["row"].get("DSSS_Mod", None))
-            counts[min(lbl, 2)] += 1  # clamp unexpected to last bin
-            h5["label"][idx] = lbl
-            h5["band"][idx] = int(it["band"])
-            h5["fs"][idx] = float(it["fs"])
-            h5["source_file"][idx] = str(it["bin"])
+            for j, it in enumerate(batch_items):
+                z = _load_interleaved_iq(it["bin"], it["row"])
+                x = np.stack([z.real, z.imag], axis=0).astype(np.float32)
+                midpoint = x.shape[1] // 2
+                if x.shape[1] < max_len:
+                    raise ValueError(f"Signal shorter than max_len at {it['bin']}")
+                x = x[:, midpoint - max_len // 2: midpoint + max_len // 2]
+                x = (x - MU[:, None]) / STD[:, None]
+
+                samples[j] = x[:, None, :]
+                lbl = _encode_label(it["row"].get("Signal_Type", ""), it["row"].get("DSSS_Mod", None))
+                labels[j] = lbl
+                counts[min(lbl, 2)] += 1  # clamp unexpected to last bin
+                bands[j] = int(it["band"])
+                fs_vals[j] = float(it["fs"])
+                src_files[j] = str(it["bin"])
+
+            sl = slice(start, end)
+            h5["sample"][sl] = samples
+            h5["label"][sl] = labels
+            h5["band"][sl] = bands
+            h5["fs"][sl] = fs_vals
+            h5["source_file"][sl] = src_files
 
         freq = counts.astype(np.float64) / max(1, counts.sum())
         weights = np.where(freq > 0, 1.0 / freq, 0.0)
@@ -189,6 +208,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data-path", required=True, help="Root directory containing batch folders.")
     p.add_argument("--output", required=True, help="Output HDF5 path.")
     p.add_argument("--max-len", type=int, default=4096, help="Center-cropped complex length (default: 4096).")
+    p.add_argument("--batch-size", type=int, default=256, help="Write batch size (default: 256).")
     p.add_argument("--csv-subdir", default="Metadata", help="Metadata subdirectory name (default: Metadata).")
     p.add_argument("--iq-subdir", default="IQ", help="IQ subdirectory name (default: IQ).")
     p.add_argument(
@@ -208,6 +228,7 @@ def main() -> None:
         data_path=Path(args.data_path),
         output=Path(args.output),
         max_len=args.max_len,
+        batch_size=args.batch_size,
         csv_subdir=args.csv_subdir,
         iq_subdir=args.iq_subdir,
         compression=comp,
