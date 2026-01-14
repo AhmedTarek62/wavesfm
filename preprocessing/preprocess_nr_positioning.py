@@ -85,7 +85,8 @@ def preprocess_positioning(
     label_shape = tuple(_norm_position(lbl0, coord_min, coord_max).shape)
 
     n = len(data_files)
-    chunk = min(batch_size, n)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, n)
     with h5py.File(output, "w") as h5:
         h5.create_dataset(
             "features",
@@ -118,15 +119,26 @@ def preprocess_positioning(
         h5.attrs["coord_nominal_min"] = json.dumps([float(x) for x in stats["coord_min"]])
         h5.attrs["coord_nominal_max"] = json.dumps([float(x) for x in stats["coord_max"]])
         
-        for idx, fname in enumerate(tqdm(data_files, desc="Caching positioning")):
-            with h5py.File(datapath / fname, "r") as f:
-                feat = f["features"][:]
-                pos = np.asarray(f["position"], dtype=np.float32)
-                label = _norm_position(pos, coord_min, coord_max)
-            feat_t = transform(feat)
-            h5["features"][idx] = feat_t
-            h5["label"][idx] = label
-            h5["source_file"][idx] = fname
+        for start in tqdm(range(0, n, batch), desc="Caching positioning", unit="batch"):
+            end = min(start + batch, n)
+            batch_files = data_files[start:end]
+            batch_len = len(batch_files)
+            feats = np.empty((batch_len, *feature_shape), dtype=np.float32)
+            labels = np.empty((batch_len, *label_shape), dtype=np.float32)
+            src_files = [""] * batch_len
+
+            for j, fname in enumerate(batch_files):
+                with h5py.File(datapath / fname, "r") as f:
+                    feat = f["features"][:]
+                    pos = np.asarray(f["position"], dtype=np.float32)
+                feat_t = transform(feat).numpy()
+                feats[j] = feat_t
+                labels[j] = _norm_position(pos, coord_min, coord_max)
+                src_files[j] = fname
+
+            h5["features"][start:end] = feats
+            h5["label"][start:end] = labels
+            h5["source_file"][start:end] = src_files
 
     return output
 

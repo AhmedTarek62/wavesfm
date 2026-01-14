@@ -65,7 +65,8 @@ def preprocess_rml(
     sample_len = first_arr.shape[-1]
     mu = STATS[version]["mu"]
     std = STATS[version]["std"]
-    chunk = min(batch_size, total)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, total)
 
     with h5py.File(output, "w") as h5:
         h5.create_dataset(
@@ -96,17 +97,25 @@ def preprocess_rml(
         for mod, snr in tqdm(keys, desc="Caching RML"):
             arr = data[(mod, snr)].astype(np.float32, copy=False)
             n = arr.shape[0]
-            arr = (arr - mu[None, ...]) / std[None, ...]  # broadcast over channel/time
             lbl_idx = LABELS.index(mod)
-            labels = np.full((n,), lbl_idx, dtype=np.int64)
             counts[lbl_idx] += n
-            snr_vals = np.full((n,), int(snr), dtype=np.int16)
+            snr_val = int(snr)
 
-            h5["sample"][idx : idx + n] = arr[:, :, None, :]
-            h5["label"][idx : idx + n] = labels
-            h5["snr"][idx : idx + n] = snr_vals
-            h5["modulation"][idx : idx + n] = np.asarray([mod] * n, dtype=object)
-            idx += n
+            for start in range(0, n, batch):
+                end = min(start + batch, n)
+                batch_len = end - start
+                arr_batch = arr[start:end]
+                arr_batch = (arr_batch - mu[None, ...]) / std[None, ...]  # broadcast over channel/time
+                labels = np.full((batch_len,), lbl_idx, dtype=np.int64)
+                snr_vals = np.full((batch_len,), snr_val, dtype=np.int16)
+                mods = np.asarray([mod] * batch_len, dtype=object)
+
+                sl = slice(idx, idx + batch_len)
+                h5["sample"][sl] = arr_batch[:, :, None, :]
+                h5["label"][sl] = labels
+                h5["snr"][sl] = snr_vals
+                h5["modulation"][sl] = mods
+                idx += batch_len
 
         freq = counts.astype(np.float64) / max(1, counts.sum())
         weights = np.where(freq > 0, 1.0 / freq, 0.0)

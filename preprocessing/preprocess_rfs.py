@@ -47,7 +47,8 @@ def preprocess_rfs(
         Normalize(mean=[0.5], std=[0.5]),
     ])
 
-    chunk = min(batch_size, n)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, n)
     with h5py.File(output, "w") as h5:
         dset = h5.create_dataset(
             "image",
@@ -76,19 +77,24 @@ def preprocess_rfs(
         h5.attrs["root"] = str(root_dir)
         h5.attrs["version"] = "v1"
 
-        idx = 0
-        for name in tqdm(samples, desc="Caching radio signals"):
-            img = Image.open(root_dir / name)
-            img = img.transpose(Image.ROTATE_90)
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            tensor = transform(img).float()
-            label = name.split("_")[0]
+        for start in tqdm(range(0, n, batch), desc="Caching radio signals", unit="batch"):
+            end = min(start + batch, n)
+            batch_names = samples[start:end]
+            tensors = []
+            label_batch = []
+            for name in batch_names:
+                with Image.open(root_dir / name) as img:
+                    img = img.transpose(Image.ROTATE_90)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    tensor = transform(img).float()
+                label = name.split("_")[0]
+                tensors.append(tensor)
+                label_batch.append(LABELS.index(label))
 
-            dset[idx] = tensor
-            labels[idx] = LABELS.index(label)
-            src[idx] = name
-            idx += 1
+            dset[start:end] = torch.stack(tensors, dim=0).numpy()
+            labels[start:end] = label_batch
+            src[start:end] = batch_names
 
     return output
 

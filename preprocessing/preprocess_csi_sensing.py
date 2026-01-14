@@ -60,7 +60,8 @@ def preprocess_csi_sensing(
 
     transform = _build_transform(img_size)
     n = len(file_list)
-    chunk = min(batch_size, n)
+    batch = max(1, int(batch_size))
+    chunk = min(batch, n)
 
     with h5py.File(output, "w") as h5:
         dset = h5.create_dataset(
@@ -92,14 +93,21 @@ def preprocess_csi_sensing(
         h5.attrs["root"] = str(root_dir)
         h5.attrs["version"] = "v1"
 
-        for idx, sample_name in enumerate(tqdm(file_list, desc="Caching CSI sensing")):
-            csi = loadmat(root_dir / sample_name)["CSIamp"].reshape(3, 114, -1)
-            csi = transform(csi)
-            label_index = _label_from_name(sample_name)
+        for start in tqdm(range(0, n, batch), desc="Caching CSI sensing", unit="batch"):
+            end = min(start + batch, n)
+            batch_names = file_list[start:end]
+            csi_batch = []
+            label_batch = []
+            for sample_name in batch_names:
+                csi = loadmat(root_dir / sample_name)["CSIamp"].reshape(3, 114, -1)
+                csi = transform(csi)
+                label_index = _label_from_name(sample_name)
+                csi_batch.append(csi)
+                label_batch.append(label_index)
 
-            dset[idx] = csi
-            labels[idx] = label_index
-            src[idx] = sample_name
+            dset[start:end] = torch.stack(csi_batch, dim=0).cpu().numpy()
+            labels[start:end] = label_batch
+            src[start:end] = batch_names
 
     return output
 
