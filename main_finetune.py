@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iq-target-len", type=int, default=256, help="Target IQ length after downsample.")
     p.add_argument("--freeze-encoder", action="store_true", help="Freeze the transformer encoder blocks.")
     p.add_argument("--frozen-blocks", type=int, default=None, help="Freeze only the first N blocks.")
-    p.add_argument("--num-blocks", type=int, default=None, help="Use only the first N transformer blocks in the forward pass.")
+    p.add_argument("--trim-blocks", type=int, default=None, help="Use only the first N transformer blocks in the forward pass.")
     p.add_argument("--use-conditional-ln", action="store_true", help="Enable modality-specific conditional LN.")
     p.add_argument("--strict-probe", action="store_true", help="Freeze tokenizer & conditional LN when encoder is frozen.")
     p.add_argument("--sl-baseline", action="store_true", help="Disable encoder freezing (train full model).")
@@ -175,8 +175,8 @@ def main():
         if hasattr(model, "head") and isinstance(model.head, torch.nn.Linear):
             trunc_normal_(model.head.weight, std=2e-5)
 
-    if args.num_blocks is not None:
-        model = trim_blocks(model, args.num_blocks)
+    if args.trim_blocks is not None:
+        model = trim_blocks(model, args.trim_blocks)
 
     freeze_encoder = args.freeze_encoder or not args.sl_baseline
     if freeze_encoder:

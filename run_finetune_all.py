@@ -148,6 +148,12 @@ def parse_args():
         help="Finetune modes to run.",
     )
     p.add_argument(
+        "--trim-blocks",
+        type=int,
+        default=None,
+        help="Use only the first N transformer blocks in the forward pass.",
+    )
+    p.add_argument(
         "--path_override",
         action="append",
         default=[],
@@ -246,6 +252,9 @@ def main():
 
                 if args.val_split is not None:
                     cmd += ["--val-split", str(args.val_split)]
+
+                if args.trim_blocks is not None:
+                    cmd += ["--trim-blocks", str(args.trim_blocks)]
 
                 if mode == "sl":
                     cmd.append("--sl-baseline")
