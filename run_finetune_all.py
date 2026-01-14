@@ -183,7 +183,7 @@ def _build_data_paths(root: Path) -> dict:
         "rfp": root / "rfp.h5",
         "interf": root / "icarus.h5",
         "rml": root / "rml22.h5",
-        "uwb": root / "environment.h5",
+        "uwb": root / "environment0.h5",
         "radcom": root / "radcom.h5",
     }
 
