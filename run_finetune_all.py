@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 # Defaults (override via CLI)
 DEFAULT_DATA_ROOT = Path("/home/ahmed/data/finetuning")
 DEFAULT_OUTPUT_ROOT = Path("/home/ahmed/runs/wavesfm-finetune")
-DEFAULT_CKPT = ''
+DEFAULT_CKPT = None
 DEFAULT_MODEL_NAME = "sm"
 
 DEFAULT_TASKS = ("sensing", "pos", "rfs", "interf", "rfp", "rml", "uwb", "radcom")
@@ -112,7 +112,7 @@ def parse_args():
         "--ckpt-path",
         type=Path,
         default=DEFAULT_CKPT,
-        help="Pretrained checkpoint to finetune from.",
+        help="Optional pretrained checkpoint to finetune from.",
     )
     p.add_argument(
         "--ckpt-name",
@@ -198,12 +198,12 @@ def _apply_overrides(data_paths: dict, overrides: list):
         data_paths[task] = Path(path).expanduser().resolve()
 
 
-def _validate_paths(data_paths: dict, tasks: list, ckpt: Path, needs_ckpt: bool):
+def _validate_paths(data_paths: dict, tasks: list, ckpt: Path | None):
     missing = [data_paths[t] for t in tasks if not data_paths[t].exists()]
     if missing:
         raise FileNotFoundError(f"Missing data paths: {missing}")
 
-    if needs_ckpt and not ckpt.exists():
+    if ckpt is not None and not ckpt.exists():
         raise FileNotFoundError(f"Missing checkpoint: {ckpt}")
 
 
@@ -211,8 +211,7 @@ def main():
     args = parse_args()
     data_paths = _build_data_paths(args.data_root)
     _apply_overrides(data_paths, args.path_override)
-    needs_ckpt = any(mode != "sl" for mode in args.modes)
-    _validate_paths(data_paths, args.tasks, args.ckpt_path, needs_ckpt)
+    _validate_paths(data_paths, args.tasks, args.ckpt_path)
     args.output_root.mkdir(parents=True, exist_ok=True)
 
     for seed in args.seeds:
@@ -257,7 +256,7 @@ def main():
 
                 if mode == "sl":
                     cmd.append("--sl-baseline")
-                else:
+                elif args.ckpt_path is not None:
                     cmd += ["--finetune", str(args.ckpt_path)]
 
                 if mode == "lora":
