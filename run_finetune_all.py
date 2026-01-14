@@ -94,6 +94,33 @@ def _pick_best_entry(entries: list[dict]) -> dict | None:
 
 
 
+
+def _load_summary(summary_path: Path) -> list[dict]:
+    if not summary_path.exists():
+        return []
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if isinstance(payload, list):
+        return payload
+    return []
+
+def _upsert_summary(entries: list[dict], summary: dict) -> list[dict]:
+    run_name = summary.get("run_name")
+    if not run_name:
+        entries.append(summary)
+        return entries
+    for idx, entry in enumerate(entries):
+        if entry.get("run_name") == run_name:
+            entries[idx] = summary
+            return entries
+    entries.append(summary)
+    return entries
+
+def _write_summary(summary_path: Path, entries: list[dict]) -> None:
+    summary_path.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
+
 def parse_args():
     p = argparse.ArgumentParser(description="Sweep WavesFM finetuning runs.")
     p.add_argument(
@@ -293,14 +320,9 @@ def main():
                     print("  DONE\n")
 
 
-                summary_path = out_dir / "summary.json"
-                summary_log = args.output_root / "summary.jsonl"
+                summary_path = args.output_root / "summary.json"
                 log_path = out_dir / "log.txt"
                 best_ckpt = out_dir / "best.pth"
-                if skip_train and summary_path.exists():
-                    print("  SUMMARY exists (skip)\n")
-                    continue
-
                 entries = _load_log_entries(log_path)
                 best_entry = _pick_best_entry(entries)
                 if not entries or best_entry is None:
@@ -323,9 +345,9 @@ def main():
                     "metrics": best_entry.get("val"),
                     "train": best_entry.get("train"),
                 }
-                summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-                with open(summary_log, "a", encoding="utf-8") as sf:
-                    sf.write(json.dumps(summary) + "\n")
+                summary_entries = _load_summary(summary_path)
+                summary_entries = _upsert_summary(summary_entries, summary)
+                _write_summary(summary_path, summary_entries)
                 print(f"  SUMMARY: {summary_path}\n")
 
 
