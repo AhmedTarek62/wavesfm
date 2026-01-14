@@ -1,4 +1,4 @@
-"""Flatten RML 2016/2022 datasets into a cache with normalized IQ samples."""
+"""Flatten RML 2016/2022 dataset files into a cache with normalized IQ samples."""
 from __future__ import annotations
 
 import argparse
@@ -31,33 +31,35 @@ STATS = {
 }
 
 
-def _load_data(root: Path, version: str):
+def _load_data(data_file: Path, version: str):
     if version == "2022":
-        return np.load(root / "RML22.01A", allow_pickle=True)
-    with open(root / "RML2016.10a_dict.pkl", "rb") as f:
+        return np.load(data_file, allow_pickle=True)
+    with open(data_file, "rb") as f:
         return pickle.load(f, encoding="latin1")
 
 
 def preprocess_rml(
-    data_path: Path,
+    data_file: Path,
     version: str,
     output: Path,
     batch_size: int = 1024,
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    root = Path(data_path)
+    data_file = Path(data_file)
     output = Path(output)
     if version not in STATS:
         raise ValueError("version must be '2016' or '2022'")
     if output.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output}")
+    if not data_file.is_file():
+        raise FileNotFoundError(f"Expected RML data file at {data_file}")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    data = _load_data(root, version)
+    data = _load_data(data_file, version)
     keys = list(data.keys())  # (mod, snr)
     if not keys:
-        raise RuntimeError(f"No samples found in {root}")
+        raise RuntimeError(f"No samples found in {data_file}")
 
     total = sum(data[k].shape[0] for k in keys)
     # Inspect first sample for length
@@ -85,7 +87,7 @@ def preprocess_rml(
             chunks=(chunk,),
             compression=compression,
         )
-        h5.attrs["root"] = str(root)
+        h5.attrs["root"] = str(data_file)
         h5.attrs["version"] = version
         h5.attrs["labels"] = json.dumps(list(LABELS))
         h5.attrs["mu"] = json.dumps([float(x) for x in mu.flatten()])
@@ -126,8 +128,8 @@ def preprocess_rml(
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Precompute RML dataset into a cache.")
-    p.add_argument("--data-path", required=True, help="Directory containing RML files (RML2016.10a_dict.pkl or RML22.01A).")
+    p = argparse.ArgumentParser(description="Precompute RML dataset file into a cache.")
+    p.add_argument("--data-file", "--data-path", dest="data_file", required=True, help="Path to RML file (RML2016.10a_dict.pkl or RML22.01A).")
     p.add_argument("--version", required=True, choices=["2016", "2022"], help="Dataset version to process.")
     p.add_argument("--output", required=True, help="Output path.")
     p.add_argument("--batch-size", type=int, default=1024, help="Chunk size for writes (default: 1024).")
@@ -145,7 +147,7 @@ def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
     out = preprocess_rml(
-        data_path=Path(args.data_path),
+        data_file=Path(args.data_file),
         version=args.version,
         output=Path(args.output),
         batch_size=args.batch_size,
