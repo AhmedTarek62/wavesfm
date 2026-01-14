@@ -21,6 +21,8 @@ from utils import (
     param_groups_lrd,
     pretty_dict,
     set_seed,
+    trim_blocks,
+    summarize_finetune_params,
 )
 
 
@@ -43,6 +45,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iq-target-len", type=int, default=256, help="Target IQ length after downsample.")
     p.add_argument("--freeze-encoder", action="store_true", help="Freeze the transformer encoder blocks.")
     p.add_argument("--frozen-blocks", type=int, default=None, help="Freeze only the first N blocks.")
+    p.add_argument("--num-blocks", type=int, default=None, help="Use only the first N transformer blocks in the forward pass.")
     p.add_argument("--use-conditional-ln", action="store_true", help="Enable modality-specific conditional LN.")
     p.add_argument("--strict-probe", action="store_true", help="Freeze tokenizer & conditional LN when encoder is frozen.")
     p.add_argument("--sl-baseline", action="store_true", help="Disable encoder freezing (train full model).")
@@ -121,6 +124,11 @@ def save_checkpoint(
     print(f"[ckpt] saved to {path}")
 
 
+def _apply_strict_probe(model: torch.nn.Module) -> None:
+    for name, param in model.named_parameters():
+        param.requires_grad = name == "cls_token" or name.startswith("head.")
+
+
 def main():
     args = parse_args()
     output_dir = Path(args.output_dir)
@@ -167,6 +175,9 @@ def main():
         if hasattr(model, "head") and isinstance(model.head, torch.nn.Linear):
             trunc_normal_(model.head.weight, std=2e-5)
 
+    if args.num_blocks is not None:
+        model = trim_blocks(model, args.num_blocks)
+
     freeze_encoder = args.freeze_encoder or not args.sl_baseline
     if freeze_encoder:
         if args.lora and hasattr(model, "freeze_encoder_lora"):
@@ -175,13 +186,17 @@ def main():
             model.freeze_encoder(args.frozen_blocks)
         else:
             model.freeze_encoder()
-        if not args.strict_probe:
+        if args.strict_probe:
+            _apply_strict_probe(model)
+        else:
             model.unfreeze_tokenizer()
             model.unfreeze_conditional_ln()
 
     model = model.to(device)
     total_params, trainable_params = count_parameters(model)
     print(f"[model] {args.model} total={total_params/1e6:.2f}M trainable={trainable_params/1e6:.2f}M")
+    for line in summarize_finetune_params(model, total_params, trainable_params):
+        print(line)
 
     if task_info.target_type == "classification":
         ce_kwargs = {}

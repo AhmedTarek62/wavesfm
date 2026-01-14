@@ -115,6 +115,91 @@ def count_parameters(model: torch.nn.Module) -> Tuple[int, int]:
     return total, trainable
 
 
+def trim_blocks(model: torch.nn.Module, num_blocks: int) -> torch.nn.Module:
+    if not hasattr(model, "blocks"):
+        raise ValueError("Model does not expose transformer blocks.")
+    total_blocks = len(model.blocks)
+    if num_blocks < 1 or num_blocks > total_blocks:
+        raise ValueError(f"num_blocks must be in [1, {total_blocks}], got {num_blocks}.")
+    if num_blocks == total_blocks:
+        return model
+    model.blocks = torch.nn.ModuleList(list(model.blocks[:num_blocks]))
+    print(f"[model] using first {num_blocks}/{total_blocks} blocks")
+    return model
+
+
+def _format_param_count(count: int) -> str:
+    if count >= 1_000_000:
+        return f"{count / 1e6:.2f}M"
+    if count >= 1_000:
+        return f"{count / 1e3:.2f}K"
+    return str(count)
+
+
+def _group_param_name(name: str) -> str:
+    top = name.split(".", 1)[0]
+    if top in {"vis_patch_embed", "channel_adapter", "iq_segment_embed", "iq_ant_embed", "iq_downsampler"}:
+        return "tokenizer"
+    if top in {"mod_ln_scale", "mod_ln_bias"}:
+        return "conditional_ln"
+    return top
+
+
+def summarize_finetune_params(
+    model: torch.nn.Module,
+    total_params: int,
+    trainable_params: int,
+) -> list[str]:
+    groups: dict[str, dict[str, int]] = {}
+    for name, param in model.named_parameters():
+        group = _group_param_name(name)
+        stats = groups.setdefault(group, {"total": 0, "trainable": 0})
+        numel = int(param.numel())
+        stats["total"] += numel
+        if param.requires_grad:
+            stats["trainable"] += numel
+
+    frozen_params = total_params - trainable_params
+    lines = [
+        (
+            f"[params] total={_format_param_count(total_params)} "
+            f"trainable={_format_param_count(trainable_params)} "
+            f"frozen={_format_param_count(frozen_params)}"
+        )
+    ]
+
+    trainable_groups = []
+    frozen_groups = []
+    partial_groups = []
+    for group, stats in groups.items():
+        if stats["trainable"] == 0:
+            frozen_groups.append((group, stats))
+        elif stats["trainable"] == stats["total"]:
+            trainable_groups.append((group, stats))
+        else:
+            partial_groups.append((group, stats))
+
+    def _sort(items):
+        return sorted(items, key=lambda item: item[1]["total"], reverse=True)
+
+    if trainable_groups:
+        lines.append("[params] trainable groups:")
+        for group, stats in _sort(trainable_groups):
+            lines.append(f"  - {group}: {_format_param_count(stats['total'])}")
+    if frozen_groups:
+        lines.append("[params] frozen groups:")
+        for group, stats in _sort(frozen_groups):
+            lines.append(f"  - {group}: {_format_param_count(stats['total'])}")
+    if partial_groups:
+        lines.append("[params] partial groups (trainable/total):")
+        for group, stats in _sort(partial_groups):
+            lines.append(
+                f"  - {group}: {_format_param_count(stats['trainable'])} / {_format_param_count(stats['total'])}"
+            )
+
+    return lines
+
+
 class JsonlLogger:
     """Append metrics as JSON lines and mirror key stats to stdout."""
 

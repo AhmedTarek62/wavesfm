@@ -1,0 +1,259 @@
+"""
+Runner to sweep WavesFM finetuning across tasks / modes / seeds.
+
+Modes:
+  - lp: linear probe (encoder frozen)
+  - ft2: partially finetune (freeze first N blocks)
+  - lora: LoRA adapters
+  - strict: strict probe (head + cls token only)
+  - sl: supervised baseline (train full model)
+
+Use CLI args to set dataset root, output root, and checkpoint path so this works
+across machines without editing the file. Defaults assume preprocessed .h5 caches.
+"""
+
+import argparse
+from pathlib import Path
+import subprocess
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+# Defaults (override via CLI)
+DEFAULT_DATA_ROOT = Path("/home/ahmed/data/finetuning")
+DEFAULT_OUTPUT_ROOT = Path("/home/ahmed/runs/wavesfm-finetune")
+DEFAULT_CKPT = Path("/home/ahmed/dev/mae_local/multimodal-results/checkpoint-799-csi.pth")
+DEFAULT_MODEL_NAME = "sm"
+
+DEFAULT_TASKS = ("sensing", "pos", "rfs", "interf", "rfp", "rml", "uwb", "radcom")
+DEFAULT_SEEDS = (0, 1, 2)
+DEFAULT_MODES = ("lp", "ft2", "lora", "strict")
+
+# Epochs (fallback to DEFAULT_EPOCHS if task not listed)
+TASK_EPOCHS = {
+    "rfp": 10,
+    "interf": 35,
+    "uwb": 50,
+    "rml": 50,
+    "radcom": 50,
+}
+DEFAULT_EPOCHS = 100
+
+# Common args
+MODEL_ARCH = "vit_multi_small"
+BATCH_SIZE = 256
+DEFAULT_NUM_WORKERS = 2
+WARMUP_EPOCHS = 5
+USE_CONDITIONAL_LN = True
+COMMON_FLAGS = [
+    "--model",
+    MODEL_ARCH,
+    "--warmup-epochs",
+    str(WARMUP_EPOCHS),
+]
+if USE_CONDITIONAL_LN:
+    COMMON_FLAGS.append("--use-conditional-ln")
+
+SMOOTH_TASKS = {"sensing": 0.1, "rfp": 0.1, "interf": 0.02, "rfs": 0.05}
+TASK_BATCH_SIZE = {
+    "rml": 2048,
+}
+LORA_RANK = 32
+LORA_ALPHA = 32
+FT2_FROZEN_BLOCKS = 6
+INTERF_ACCUM = 2
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Sweep WavesFM finetuning runs.")
+    p.add_argument(
+        "--data_root",
+        type=Path,
+        default=DEFAULT_DATA_ROOT,
+        help="Base directory containing finetune caches.",
+    )
+    p.add_argument(
+        "--output_root",
+        type=Path,
+        default=DEFAULT_OUTPUT_ROOT,
+        help="Base directory to save finetune checkpoints/logs.",
+    )
+    p.add_argument(
+        "--ckpt_path",
+        type=Path,
+        default=DEFAULT_CKPT,
+        help="Pretrained checkpoint to finetune from.",
+    )
+    p.add_argument(
+        "--ckpt_name",
+        type=str,
+        default=DEFAULT_MODEL_NAME,
+        help="Name tag used in output folder/run names.",
+    )
+    p.add_argument(
+        "--num_workers",
+        type=int,
+        default=DEFAULT_NUM_WORKERS,
+        help="DataLoader workers.",
+    )
+    p.add_argument(
+        "--tasks",
+        nargs="+",
+        default=list(DEFAULT_TASKS),
+        choices=list(DEFAULT_TASKS),
+        help="Tasks to run.",
+    )
+    p.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=list(DEFAULT_SEEDS),
+        help="Seeds to run.",
+    )
+    p.add_argument(
+        "--modes",
+        nargs="+",
+        default=list(DEFAULT_MODES),
+        choices=["lp", "ft2", "lora", "strict", "sl"],
+        help="Finetune modes to run.",
+    )
+    p.add_argument(
+        "--path_override",
+        action="append",
+        default=[],
+        help="Override a task path, format task=/abs/path (can repeat).",
+    )
+    p.add_argument(
+        "--val_split",
+        type=float,
+        default=None,
+        help="Override val split fraction when val data is not provided.",
+    )
+    p.add_argument("--dry_run", action="store_true", help="Print commands only.")
+    p.add_argument(
+        "--skip_if_done",
+        action="store_true",
+        default=True,
+        help="Skip runs if final checkpoint exists.",
+    )
+    return p.parse_args()
+
+
+def _build_data_paths(root: Path) -> dict:
+    return {
+        "pos": root / "5G_NR_Positioning.h5",
+        "rfs": root / "radio_sig_identification.h5",
+        "sensing": root / "NTU-Fi_HAR.h5",
+        "rfp": root / "GlobecomPOWDER.h5",
+        "interf": root / "icarus_split.h5",
+        "rml": root / "RML.h5",
+        "uwb": root / "uwb_loc_environment0_clean.h5",
+        "radcom": root / "RadComOta2p45GHz_preprocessed.h5",
+    }
+
+
+def _apply_overrides(data_paths: dict, overrides: list):
+    for entry in overrides:
+        if "=" not in entry:
+            raise ValueError(f"Invalid override '{entry}'. Use task=/abs/path")
+        task, path = entry.split("=", 1)
+        task = task.strip()
+        if task not in data_paths:
+            raise ValueError(f"Unknown task in override: {task}")
+        data_paths[task] = Path(path).expanduser().resolve()
+
+
+def _validate_paths(data_paths: dict, tasks: list, ckpt: Path, needs_ckpt: bool):
+    missing = [data_paths[t] for t in tasks if not data_paths[t].exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing data paths: {missing}")
+
+    if needs_ckpt and not ckpt.exists():
+        raise FileNotFoundError(f"Missing checkpoint: {ckpt}")
+
+
+def main():
+    args = parse_args()
+    data_paths = _build_data_paths(args.data_root)
+    _apply_overrides(data_paths, args.path_override)
+    needs_ckpt = any(mode != "sl" for mode in args.modes)
+    _validate_paths(data_paths, args.tasks, args.ckpt_path, needs_ckpt)
+    args.output_root.mkdir(parents=True, exist_ok=True)
+
+    for seed in args.seeds:
+        for mode in args.modes:
+            for task in args.tasks:
+                data_path = data_paths[task]
+                epochs = TASK_EPOCHS.get(task, DEFAULT_EPOCHS)
+
+                mode_tag = mode
+                out_dir = args.output_root / f"{args.ckpt_name}_{mode_tag}" / task / f"s{seed}"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                log_file = out_dir / "train.log"
+                run_name = f"{args.ckpt_name}_{task}_{mode_tag}_s{seed}"
+
+                batch_size = TASK_BATCH_SIZE.get(task, BATCH_SIZE)
+
+                cmd = [
+                    sys.executable,
+                    str(REPO_ROOT / "main_finetune.py"),
+                    "--task",
+                    task,
+                    "--train-data",
+                    str(data_path),
+                    "--output-dir",
+                    str(out_dir),
+                    "--batch-size",
+                    str(batch_size),
+                    "--num-workers",
+                    str(args.num_workers),
+                    "--epochs",
+                    str(epochs),
+                    "--seed",
+                    str(seed),
+                    *COMMON_FLAGS,
+                ]
+
+                if args.val_split is not None:
+                    cmd += ["--val-split", str(args.val_split)]
+
+                if mode == "sl":
+                    cmd.append("--sl-baseline")
+                else:
+                    cmd += ["--finetune", str(args.ckpt_path)]
+
+                if mode == "lora":
+                    cmd += ["--lora", "--lora-rank", str(LORA_RANK), "--lora-alpha", str(LORA_ALPHA)]
+                elif mode == "ft2":
+                    cmd += ["--frozen-blocks", str(FT2_FROZEN_BLOCKS)]
+                elif mode == "strict":
+                    cmd.append("--strict-probe")
+
+                if task == "interf":
+                    cmd += ["--accum-steps", str(INTERF_ACCUM)]
+
+                if task in SMOOTH_TASKS:
+                    cmd += ["--smoothing", str(SMOOTH_TASKS[task])]
+
+                pretty = " ".join(cmd)
+                print(f"[{mode.upper()}] MODEL={args.ckpt_name} TASK={task} SEED={seed}")
+                print(f"  RUN={run_name}")
+                print(f"  CMD: {pretty}\n")
+
+                final_ckpt = out_dir / f"checkpoint_{epochs-1:03d}.pth"
+                if args.skip_if_done and final_ckpt.exists():
+                    print("  SKIP (final checkpoint exists)\n")
+                    continue
+
+                if args.dry_run:
+                    continue
+
+                with open(log_file, "a", encoding="utf-8") as lf:
+                    lf.write(pretty + "\n")
+                    lf.flush()
+                    subprocess.run(cmd, stdout=lf, stderr=lf, check=True)
+                print("  DONE\n")
+
+
+if __name__ == "__main__":
+    main()
