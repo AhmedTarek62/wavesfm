@@ -13,9 +13,12 @@ across machines without editing the file. Defaults assume preprocessed .h5 cache
 """
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import sys
+
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -62,6 +65,33 @@ LORA_RANK = 32
 LORA_ALPHA = 32
 FT2_FROZEN_BLOCKS = 6
 INTERF_ACCUM = 2
+
+def _load_log_entries(log_path: Path) -> list[dict]:
+    if not log_path.exists():
+        return []
+    entries = []
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+def _pick_best_entry(entries: list[dict]) -> dict | None:
+    best_entry = None
+    last_best = None
+    for entry in entries:
+        cur = entry.get("best_metric")
+        if cur is None:
+            continue
+        if last_best is None or cur != last_best:
+            last_best = cur
+            best_entry = entry
+    return best_entry
+
 
 
 def parse_args():
@@ -241,18 +271,55 @@ def main():
                 print(f"  CMD: {pretty}\n")
 
                 final_ckpt = out_dir / f"checkpoint_{epochs-1:03d}.pth"
-                if args.skip_if_done and final_ckpt.exists():
+                skip_train = args.skip_if_done and final_ckpt.exists()
+                if skip_train:
                     print("  SKIP (final checkpoint exists)\n")
-                    continue
 
                 if args.dry_run:
                     continue
 
-                with open(log_file, "a", encoding="utf-8") as lf:
-                    lf.write(pretty + "\n")
-                    lf.flush()
-                    subprocess.run(cmd, stdout=lf, stderr=lf, check=True)
-                print("  DONE\n")
+                if not skip_train:
+                    with open(log_file, "a", encoding="utf-8") as lf:
+                        lf.write(pretty + "\n")
+                        lf.flush()
+                        subprocess.run(cmd, stdout=lf, stderr=lf, check=True)
+                    print("  DONE\n")
+
+
+                summary_path = out_dir / "summary.json"
+                summary_log = args.output_root / "summary.jsonl"
+                log_path = out_dir / "log.txt"
+                best_ckpt = out_dir / "best.pth"
+                if skip_train and summary_path.exists():
+                    print("  SUMMARY exists (skip)\n")
+                    continue
+
+                entries = _load_log_entries(log_path)
+                best_entry = _pick_best_entry(entries)
+                if not entries or best_entry is None:
+                    print("  WARN (log missing or empty; no summary)\n")
+                    continue
+
+                if not best_ckpt.exists():
+                    print("  WARN (best checkpoint missing; summary from log)\n")
+
+                summary = {
+                    "run_name": run_name,
+                    "task": task,
+                    "seed": seed,
+                    "mode": mode_tag,
+                    "ckpt_name": args.ckpt_name,
+                    "best_ckpt": str(best_ckpt),
+                    "best_epoch": best_entry.get("epoch"),
+                    "best_key": best_entry.get("best_key"),
+                    "best_metric": best_entry.get("best_metric"),
+                    "metrics": best_entry.get("val"),
+                    "train": best_entry.get("train"),
+                }
+                summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+                with open(summary_log, "a", encoding="utf-8") as sf:
+                    sf.write(json.dumps(summary) + "\n")
+                print(f"  SUMMARY: {summary_path}\n")
 
 
 if __name__ == "__main__":
