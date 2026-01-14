@@ -320,7 +320,7 @@ def main():
                     print("  DONE\n")
 
 
-                summary_path = args.output_root / "summary.json"
+                summary_path = args.output_root / f"{args.ckpt_name}_{mode_tag}" / "summary.json"
                 log_path = out_dir / "log.txt"
                 best_ckpt = out_dir / "best.pth"
                 entries = _load_log_entries(log_path)
