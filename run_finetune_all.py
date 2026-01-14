@@ -154,20 +154,20 @@ def parse_args():
         help="Use only the first N transformer blocks in the forward pass.",
     )
     p.add_argument(
-        "--path_override",
+        "--path-override",
         action="append",
         default=[],
         help="Override a task path, format task=/abs/path (can repeat).",
     )
     p.add_argument(
-        "--val_split",
+        "--val-split",
         type=float,
         default=None,
         help="Override val split fraction when val data is not provided.",
     )
-    p.add_argument("--dry_run", action="store_true", help="Print commands only.")
+    p.add_argument("--dry-run", action="store_true", help="Print commands only.")
     p.add_argument(
-        "--skip_if_done",
+        "--skip-if-done",
         action="store_true",
         default=True,
         help="Skip runs if final checkpoint exists.",
