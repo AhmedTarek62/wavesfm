@@ -212,7 +212,7 @@ def _build_data_paths(root: Path) -> dict:
         "interf": root / "icarus.h5",
         "rml": root / "rml22.h5",
         "uwb-indoor": root / "environment0.h5",
-        "uwb-industrial": root / "ipin" / "industrial_training_clean.h5",
+        "uwb-industrial": root / "ipin-train.h5",
         "radcom": root / "radcom.h5",
     }
 
