@@ -35,7 +35,8 @@ Use the short name with `--task`:
 - `sensing` — CSI sensing human activity classification (image-like CSI tensors).
 - `rfs` — radio signal classification from spectrograms (image-like).
 - `pos` — 5G NR positioning (regression on image-like CSI features).
-- `uwb` — UWB localization from CIR (regression on IQ-like CIR tensors).
+- `uwb-indoor` — UWB indoor localization from CIR (regression on IQ-like CIR tensors).
+- `uwb-industrial` — UWB industrial localization from CIR (regression on IQ-like CIR tensors, official train/test split).
 - `radcom` — RadCom OTA classification (IQ).
 - `rml` — RadioML modulation classification (IQ).
 - `rfp` — Powder RF fingerprinting (IQ).
@@ -114,6 +115,8 @@ Some code is adapted from:
 - CSI sensing (WiFi): `@ARTICLE{9667414, author={Yang, Jianfei and Chen, Xinyan and Zou, Han and Wang, Dazhuo and Xu, Qianwen and Xie, Lihua}, journal={IEEE Internet of Things Journal}, title={EfficientFi: Toward Large-Scale Lightweight WiFi Sensing via CSI Compression}, year={2022}, volume={9}, number={15}, pages={13086-13095}, doi={10.1109/JIOT.2021.3139958}}`
 - Radio spectrograms (RFS): `@dataset{zahid2024commrad, title = {CommRad RF: A dataset of communication radio signals for detection, identification and classification}, author = {Zahid, M.}, publisher = {Zenodo}, year = {2024}, doi = {10.5281/zenodo.14192970}}`
 - 5G positioning (pos): `@data{jsat-pb50-21, doi = {10.21227/jsat-pb50}, url = {https://dx.doi.org/10.21227/jsat-pb50}, author = {Kaixuan Gao and Huiqiang Wang and Hongwu Lv}, publisher = {IEEE Dataport}, title = {CSI Dataset towards 5G NR High-Precision Positioning}, year = {2021}}`
+- UWB indoor (UWB-LOC): `@dataset{bregar2023uwb, title = {UWB Positioning and Tracking Data Set}, author = {Bregar, Klemen}, publisher = {Zenodo}, year = {2023}, doi = {10.5281/zenodo.7629141}}`
+- UWB industrial (CIR): https://cmutschler.de/datasets/channel-impulse-responses
 - RadCom OTA (radcom): `@article{AjagannathCOMNET21, title = {Dataset for modulation classification and signal type classification for multi-task and single task learning}, journal = {Computer Networks}, volume = {199}, pages = {108441}, year = {2021}, doi = {10.1016/j.comnet.2021.108441}, author = {Anu Jagannath and Jithin Jagannath}}`
 - RML (modulation): `@article{10.1109/TWC.2023.3254490, author = {Sathyanarayanan, Venkatesh and Gerstoft, Peter and Gamal, Aly El}, title = {RML22: Realistic Dataset Generation for Wireless Modulation Classification}, journal = {Trans. Wireless. Comm.}, year = {2023}, volume = {22}, number = {11}, pages = {7663--7675}, doi = {10.1109/TWC.2023.3254490}}`
 - RF fingerprinting (Powder/RFP): `@inproceedings{reusmuns2019trust, title={Trust in 5G Open RANs through Machine Learning: RF Fingerprinting on the POWDER PAWR Platform}, author={Reus-Muns, Guillem and Jaisinghani, Dhertya and Sankhe, Kunal and Chowdhury, Kaushik}, booktitle={IEEE Globecom 2020-IEEE Global Communications Conference}, year={2020}, organization={IEEE}}`
