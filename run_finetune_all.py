@@ -304,8 +304,9 @@ def main():
                 print(f"  RUN={run_name}")
                 print(f"  CMD: {pretty}\n")
 
-                final_ckpt = out_dir / f"checkpoint_{epochs-1:03d}.pth"
-                skip_train = args.skip_if_done and final_ckpt.exists()
+                final_ckpt = out_dir / f"checkpoint_{epochs-1:03d}.pth" 
+                best_ckpt = out_dir / "best.pth"
+                skip_train = args.skip_if_done and (final_ckpt.exists() or best_ckpt.exists())
                 if skip_train:
                     print("  SKIP (final checkpoint exists)\n")
 
