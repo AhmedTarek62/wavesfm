@@ -217,12 +217,6 @@ def _build_data_paths(root: Path) -> dict:
     }
 
 
-def _build_val_paths(root: Path) -> dict:
-    return {
-        "uwb-industrial": root / "ipin" / "industrial_test_clean.h5",
-    }
-
-
 def _apply_overrides(data_paths: dict, overrides: list):
     for entry in overrides:
         if "=" not in entry:
@@ -234,14 +228,10 @@ def _apply_overrides(data_paths: dict, overrides: list):
         data_paths[task] = Path(path).expanduser().resolve()
 
 
-def _validate_paths(data_paths: dict, val_paths: dict, tasks: list, ckpt: Path | None):
+def _validate_paths(data_paths: dict, tasks: list, ckpt: Path | None):
     missing = [data_paths[t] for t in tasks if not data_paths[t].exists()]
     if missing:
         raise FileNotFoundError(f"Missing data paths: {missing}")
-
-    missing_val = [val_paths[t] for t in tasks if t in val_paths and not val_paths[t].exists()]
-    if missing_val:
-        raise FileNotFoundError(f"Missing val data paths: {missing_val}")
 
     if ckpt is not None and not ckpt.exists():
         raise FileNotFoundError(f"Missing checkpoint: {ckpt}")
@@ -250,9 +240,8 @@ def _validate_paths(data_paths: dict, val_paths: dict, tasks: list, ckpt: Path |
 def main():
     args = parse_args()
     data_paths = _build_data_paths(args.data_root)
-    val_paths = _build_val_paths(args.data_root)
     _apply_overrides(data_paths, args.path_override)
-    _validate_paths(data_paths, val_paths, args.tasks, args.ckpt_path)
+    _validate_paths(data_paths, args.tasks, args.ckpt_path)
     args.output_root.mkdir(parents=True, exist_ok=True)
 
     for seed in args.seeds:
@@ -289,10 +278,7 @@ def main():
                     *COMMON_FLAGS,
                 ]
 
-                val_path = val_paths.get(task)
-                if val_path is not None:
-                    cmd += ["--val-data", str(val_path)]
-                elif args.val_split is not None:
+                if args.val_split is not None:
                     cmd += ["--val-split", str(args.val_split)]
 
                 if args.trim_blocks is not None:
