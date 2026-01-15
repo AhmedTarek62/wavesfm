@@ -59,6 +59,7 @@ if USE_CONDITIONAL_LN:
     COMMON_FLAGS.append("--use-conditional-ln")
 
 SMOOTH_TASKS = {"sensing": 0.1, "rfp": 0.1, "interf": 0.02, "rfs": 0.05}
+STRATIFIED_TASKS = {"rfs", "interf"}
 TASK_BATCH_SIZE = {
     "rml": 2048,
 }
@@ -280,6 +281,9 @@ def main():
 
                 if args.val_split is not None:
                     cmd += ["--val-split", str(args.val_split)]
+
+                if task in STRATIFIED_TASKS:
+                    cmd.append("--stratified-split")
 
                 if args.trim_blocks is not None:
                     cmd += ["--trim-blocks", str(args.trim_blocks)]

@@ -150,6 +150,88 @@ def evaluate_classification(
 
 
 @torch.no_grad()
+def evaluate_interference(
+    model: torch.nn.Module,
+    data_loader,
+    device: torch.device,
+    criterion: torch.nn.Module,
+) -> Dict[str, float]:
+    model.eval()
+    loss_meter = AverageMeter()
+    acc1_meter = AverageMeter()
+    acc3_meter = AverageMeter()
+    per_class_correct = None
+    per_class_total = None
+    det_correct = torch.zeros(1, device=device, dtype=torch.long)
+    det_total = torch.zeros(1, device=device, dtype=torch.long)
+    mod_correct = torch.zeros(1, device=device, dtype=torch.long)
+    mod_total = torch.zeros(1, device=device, dtype=torch.long)
+
+    autocast_enabled = device.type == "cuda"
+    for batch in data_loader:
+        samples, targets = _unpack_batch(batch)
+        samples = samples.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
+
+        with torch.autocast(device_type=device.type, enabled=autocast_enabled):
+            outputs = model(samples)
+            loss = criterion(outputs, targets)
+
+        loss_meter.update(loss.item(), n=samples.size(0))
+        acc1, acc3 = accuracy(outputs, targets, topk=(1, min(3, outputs.shape[1])))
+        acc1_meter.update(acc1.item(), n=samples.size(0))
+        acc3_meter.update(acc3.item(), n=samples.size(0))
+
+        if per_class_correct is None:
+            num_classes = outputs.shape[1]
+            per_class_correct = torch.zeros(num_classes, device=device)
+            per_class_total = torch.zeros(num_classes, device=device)
+
+        _, pred = outputs.max(1)
+        for i in range(samples.size(0)):
+            lbl = targets[i]
+            per_class_total[lbl] += 1
+            if pred[i] == lbl:
+                per_class_correct[lbl] += 1
+
+        true_is_interf = targets != 0
+        pred_is_interf = pred != 0
+        det_correct += (true_is_interf == pred_is_interf).sum()
+        det_total += targets.numel()
+
+        if true_is_interf.any():
+            t_int = targets[true_is_interf]
+            p_int = pred[true_is_interf]
+            mod_correct += (p_int == t_int).sum()
+            mod_total += t_int.numel()
+
+    if per_class_total is None:
+        pca = 0.0
+    else:
+        per_class_acc = torch.where(
+            per_class_total > 0,
+            per_class_correct / per_class_total * 100.0,
+            torch.zeros_like(per_class_total),
+        )
+        pca = per_class_acc.mean().item()
+
+    det_acc = 100.0 * float(det_correct.item()) / max(1, int(det_total.item()))
+    mod_den = int(mod_total.item())
+    mod_acc = 100.0 * float(mod_correct.item()) / mod_den if mod_den > 0 else 0.0
+
+    stats = {
+        "loss": loss_meter.avg,
+        "acc1": acc1_meter.avg,
+        "acc3": acc3_meter.avg,
+        "pca": pca,
+        "det_acc": det_acc,
+        "mod_acc": mod_acc,
+    }
+    print(pretty_dict(stats, prefix="[val] "))
+    return stats
+
+
+@torch.no_grad()
 def evaluate_radcom(
     model: torch.nn.Module,
     data_loader,
@@ -322,6 +404,8 @@ def evaluate(
 ) -> Dict[str, float]:
     if task_type == "classification" and task_name == "radcom":
         return evaluate_radcom(model, data_loader, device, criterion)
+    if task_type == "classification" and task_name == "interf":
+        return evaluate_interference(model, data_loader, device, criterion)
     if task_type == "classification":
         return evaluate_classification(model, data_loader, device, criterion, num_outputs)
     if task_type == "position":

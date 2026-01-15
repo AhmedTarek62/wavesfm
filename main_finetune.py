@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--train-data", dest="train_path", required=True, help="Path to training data.")
     p.add_argument("--val-data", dest="val_path", help="Optional validation data.")
     p.add_argument("--val-split", type=float, default=0.2, help="Val fraction if validation data is not provided.")
+    p.add_argument("--stratified-split", action="store_true", help="Use stratified split when val data is not provided (classification only).")
 
     # Model
     p.add_argument("--model", default="vit_multi_small", help="Model name from models_vit.")
@@ -144,6 +145,7 @@ def main():
         args.train_path,
         val_path=args.val_path,
         val_split=args.val_split,
+        stratified_split=args.stratified_split,
         seed=args.seed,
     )
     print(f"[data] task={args.task} train={len(train_ds)} val={len(val_ds)}")

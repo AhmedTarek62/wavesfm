@@ -7,7 +7,7 @@ import json
 
 import h5py
 import torch
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset, Subset, random_split
 
 from dataset_classes import (
     ImageDataset,
@@ -132,11 +132,101 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
     raise ValueError(f"Unsupported task: {task}")
 
 
+def _label_to_int(label) -> int:
+    if torch.is_tensor(label):
+        if label.numel() != 1:
+            raise ValueError("Stratified split requires scalar class labels.")
+        return int(label.item())
+    if isinstance(label, (list, tuple)):
+        if len(label) != 1:
+            raise ValueError("Stratified split requires scalar class labels.")
+        return int(label[0])
+    return int(label)
+
+
+def _extract_labels(dataset: Dataset) -> list[int]:
+    if hasattr(dataset, "h5_path") and hasattr(dataset, "label_key"):
+        with h5py.File(Path(dataset.h5_path), "r") as h5:
+            labels = h5[dataset.label_key][:]
+        labels_tensor = torch.as_tensor(labels).reshape(-1)
+        if labels_tensor.numel() != len(dataset):
+            raise ValueError("Stratified split requires scalar class labels.")
+        return [int(v) for v in labels_tensor.tolist()]
+
+    labels = []
+    for idx in range(len(dataset)):
+        item = dataset[idx]
+        if not isinstance(item, (tuple, list)) or len(item) < 2:
+            raise ValueError("Dataset __getitem__ must return (sample, label, ...) for stratified split.")
+        labels.append(_label_to_int(item[1]))
+    return labels
+
+
+def _stratified_split(dataset: Dataset, val_split: float, seed: int) -> Tuple[Dataset, Dataset]:
+    labels = _extract_labels(dataset)
+    if len(labels) != len(dataset):
+        raise ValueError("Label count mismatch for stratified split.")
+
+    class_to_indices: dict[int, list[int]] = {}
+    for idx, label in enumerate(labels):
+        class_to_indices.setdefault(int(label), []).append(idx)
+
+    gen = torch.Generator().manual_seed(seed + 1)
+    for indices in class_to_indices.values():
+        if len(indices) > 1:
+            perm = torch.randperm(len(indices), generator=gen).tolist()
+            indices[:] = [indices[i] for i in perm]
+
+    total = len(dataset)
+    desired_val = max(1, int(total * val_split))
+    val_counts: dict[int, int] = {}
+    remainders = []
+    base_total = 0
+    for label, indices in class_to_indices.items():
+        raw = len(indices) * val_split
+        base = int(raw)
+        base_total += base
+        val_counts[label] = base
+        remainders.append((raw - base, label))
+
+    remainder = desired_val - base_total
+    if remainder > 0:
+        remainders.sort(key=lambda item: (-item[0], item[1]))
+        for frac, label in remainders[:remainder]:
+            val_counts[label] += 1
+    elif remainder < 0:
+        remove = -remainder
+        remainders.sort(key=lambda item: (item[0], item[1]))
+        for frac, label in remainders:
+            if remove <= 0:
+                break
+            if val_counts[label] > 0:
+                val_counts[label] -= 1
+                remove -= 1
+
+    train_indices = []
+    val_indices = []
+    for label, indices in class_to_indices.items():
+        val_count = val_counts[label]
+        val_indices.extend(indices[:val_count])
+        train_indices.extend(indices[val_count:])
+
+    if len(train_indices) > 1:
+        perm = torch.randperm(len(train_indices), generator=gen).tolist()
+        train_indices = [train_indices[i] for i in perm]
+    if len(val_indices) > 1:
+        perm = torch.randperm(len(val_indices), generator=gen).tolist()
+        val_indices = [val_indices[i] for i in perm]
+
+    return Subset(dataset, train_indices), Subset(dataset, val_indices)
+
+
 def build_datasets(
     task: str,
     train_path: str | Path,
     val_path: str | Path | None = None,
     val_split: float = 0.2,
+    stratified_split: bool = False,
     seed: int = 42,
 ) -> Tuple[Dataset, Dataset, TaskInfo]:
     """
@@ -162,9 +252,12 @@ def build_datasets(
     else:
         if not 0 < val_split < 1:
             raise ValueError("val_split must be in (0, 1) when val_path is omitted.")
-        val_size = max(1, int(len(train_ds) * val_split))
-        train_size = max(1, len(train_ds) - val_size)
-        gen = torch.Generator().manual_seed(seed + 1)
-        train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
+        if stratified_split and info.target_type == "classification":
+            train_ds, val_ds = _stratified_split(train_ds, val_split, seed)
+        else:
+            val_size = max(1, int(len(train_ds) * val_split))
+            train_size = max(1, len(train_ds) - val_size)
+            gen = torch.Generator().manual_seed(seed + 1)
+            train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
 
     return train_ds, val_ds, info
