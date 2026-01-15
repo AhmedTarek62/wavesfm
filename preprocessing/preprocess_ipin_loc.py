@@ -48,7 +48,7 @@ def preprocess_ipin_loc(
     data_path: Path,
     output: Path,
     anchors: Iterable[str] | None = None,
-    anchor_col: str = "anch_ID",
+    anchor_col: str = "anch_id",
     cir_real_col: str = "cir_real",
     cir_imag_col: str = "cir_imag",
     ref_x_col: str = "ref_x",
