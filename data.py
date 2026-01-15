@@ -10,13 +10,13 @@ import torch
 from torch.utils.data import Dataset, random_split
 
 from dataset_classes import (
-    IQDataset,
     ImageDataset,
     RadComOta,
     RML,
     Powder,
     Icarus,
-    UWBLoc,
+    UWBIndoor,
+    UWBIndustrial,
 )
 
 SUPPORTED_TASKS = (
@@ -24,7 +24,8 @@ SUPPORTED_TASKS = (
     "rfs",
     "pos",
     "radcom",
-    "uwb",
+    "uwb-indoor",
+    "uwb-industrial",
     "rml",
     "rfp",
     "interf",
@@ -51,8 +52,10 @@ def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
         return lambda p: ImageDataset(p, sample_key="features", label_key="label", label_dtype=torch.float32)
     if task == "radcom":
         return lambda p: RadComOta(p)
-    if task == "uwb":
-        return lambda p: UWBLoc(p, as_complex=False)
+    if task == "uwb-indoor":
+        return lambda p: UWBIndoor(p, as_complex=False)
+    if task == "uwb-industrial":
+        return lambda p: UWBIndustrial(p, as_complex=False)
     if task == "rml":
         return lambda p: RML(p)
     if task == "rfp":
@@ -101,7 +104,15 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
             num_outputs=target_dim, in_chans=sample.shape[0],
             coord_min=coord_min, coord_max=coord_max,
         )
-    if task == "uwb":
+    if task == "uwb-indoor":
+        sample, label = dataset[0]
+        target_dim = int(label.numel()) if torch.is_tensor(label) else len(label)
+        return TaskInfo(
+            name=task, modality="iq", target_type="position",
+            num_outputs=target_dim, in_chans=None,
+            coord_min=dataset.loc_min, coord_max=dataset.loc_max,
+        )
+    if task == "uwb-industrial":
         sample, label = dataset[0]
         target_dim = int(label.numel()) if torch.is_tensor(label) else len(label)
         return TaskInfo(
