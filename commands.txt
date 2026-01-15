@@ -1,4 +1,0 @@
-python run_finetune_all.py --data-root preprocessed/ --output-root ~/runs/wfm-checkpoints/finetune/ --ckpt-name one_block --num-workers 2 --modes lp --ckpt-path ~/runs/wfm-checkpoints/pretrain/pretrained-spect-iq.pth --trim-blocks 1 --seeds 0 1 2 --skip-if-done
-
-python run_finetune_all.py --data-root preprocessed/ --output-root ~/runs/wfm-checkpoints/finetune/ --ckpt-name random_init --num-workers 2 --modes lp --seeds 0 1 2 --skip-if-done
-
