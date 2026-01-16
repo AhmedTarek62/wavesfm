@@ -137,25 +137,23 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
         num_classes = 3
         return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
     if task == "deepmimo-los":
-        sample, _label = dataset[0]
         return TaskInfo(
             name=task,
             modality="vision",
             target_type="classification",
             num_outputs=2,
-            in_chans=int(sample.shape[0]),
+            in_chans=2,
         )
     if task == "deepmimo-beam":
         n_beams = dataset.n_beams
         if not n_beams:
             raise ValueError("DeepMIMO beam dataset missing n_beams attribute in h5.")
-        sample, _label = dataset[0]
         return TaskInfo(
             name=task,
             modality="vision",
             target_type="classification",
             num_outputs=int(n_beams),
-            in_chans=int(sample.shape[0]),
+            in_chans=2,
         )
     raise ValueError(f"Unsupported task: {task}")
 

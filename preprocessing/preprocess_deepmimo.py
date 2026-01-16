@@ -10,6 +10,8 @@ from typing import Iterable, List
 
 import h5py
 import numpy as np
+import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 import DeepMIMOv3
@@ -182,11 +184,17 @@ def preprocess_deepmimo(
     beam_arr = np.concatenate(beam_labels_list, axis=0)
     scenario_arr = np.concatenate(scenario_labels, axis=0)
 
-    # Compute channel-wise mean/std and standardize.
-    mean = sample_arr.mean(axis=(0, 2, 3), dtype=np.float64)
-    std = sample_arr.std(axis=(0, 2, 3), dtype=np.float64)
+    # Resize to 224x224 and compute channel-wise mean/std on resized data.
+    resized = F.interpolate(
+        torch.from_numpy(sample_arr),
+        size=(224, 224),
+        mode="bicubic",
+        align_corners=False,
+    ).numpy()
+    mean = resized.mean(axis=(0, 2, 3), dtype=np.float64)
+    std = resized.std(axis=(0, 2, 3), dtype=np.float64)
     std = np.clip(std, 1e-12, None)
-    sample_arr = ((sample_arr - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
+    sample_arr = ((resized - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
 
     n = sample_arr.shape[0]
     sample_shape = sample_arr.shape[1:]
