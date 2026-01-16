@@ -3,6 +3,7 @@ from dataset_classes.cir_loc import CIRLocDataset, UWBIndoor, UWBIndustrial
 from dataset_classes.icarus import Icarus
 from dataset_classes.powder import Powder
 from dataset_classes.radcom_ota import RadComOta, RADCOM_OTA_LABELS
+from dataset_classes.deepmimo import DeepMIMO
 from dataset_classes.rml import RML, make_snr_sampler
 __all__ = [
     "IQDataset",
@@ -16,4 +17,5 @@ __all__ = [
     "UWBIndoor",
     "UWBIndustrial",
     "CIRLocDataset",
+    "DeepMIMO",
 ]

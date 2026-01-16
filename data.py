@@ -17,6 +17,7 @@ from dataset_classes import (
     Icarus,
     UWBIndoor,
     UWBIndustrial,
+    DeepMIMO,
 )
 
 SUPPORTED_TASKS = (
@@ -29,6 +30,8 @@ SUPPORTED_TASKS = (
     "rml",
     "rfp",
     "interf",
+    "deepmimo-los",
+    "deepmimo-beam",
 )
 
 
@@ -62,6 +65,10 @@ def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
         return lambda p: Powder(p)
     if task == "interf":
         return lambda p: Icarus(p)
+    if task == "deepmimo-los":
+        return lambda p: DeepMIMO(p, label_key="label_los")
+    if task == "deepmimo-beam":
+        return lambda p: DeepMIMO(p, label_key="label_beam")
     raise ValueError(f"Unsupported task: {task}")
 
 
@@ -129,6 +136,27 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
     if task == "interf":
         num_classes = 3
         return TaskInfo(name=task, modality="iq", target_type="classification", num_outputs=num_classes)
+    if task == "deepmimo-los":
+        sample, _label = dataset[0]
+        return TaskInfo(
+            name=task,
+            modality="vision",
+            target_type="classification",
+            num_outputs=2,
+            in_chans=int(sample.shape[0]),
+        )
+    if task == "deepmimo-beam":
+        n_beams = dataset.n_beams
+        if not n_beams:
+            raise ValueError("DeepMIMO beam dataset missing n_beams attribute in h5.")
+        sample, _label = dataset[0]
+        return TaskInfo(
+            name=task,
+            modality="vision",
+            target_type="classification",
+            num_outputs=int(n_beams),
+            in_chans=int(sample.shape[0]),
+        )
     raise ValueError(f"Unsupported task: {task}")
 
 
