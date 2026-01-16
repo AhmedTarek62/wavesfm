@@ -142,7 +142,7 @@ def beam_labels(data: dict, scenario: str, n_beams: int, dataset_folder: str) ->
 
 
 def _channels_to_ri(channels: np.ndarray) -> np.ndarray:
-    arr = np.asarray(channels)
+    arr = np.asarray(channels)[:, 0]
     if np.iscomplexobj(arr):
         return np.stack((arr.real, arr.imag), axis=1).astype(np.float32)
     return arr.astype(np.float32)
