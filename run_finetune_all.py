@@ -28,7 +28,19 @@ DEFAULT_OUTPUT_ROOT = Path("/home/ahmed/runs/wavesfm-finetune")
 DEFAULT_CKPT = None
 DEFAULT_MODEL_NAME = "sm"
 
-DEFAULT_TASKS = ("sensing", "pos", "rfs", "interf", "rfp", "rml", "uwb-indoor", "uwb-industrial", "radcom")
+DEFAULT_TASKS = (
+    "sensing",
+    "pos",
+    "rfs",
+    "interf",
+    "rfp",
+    "rml",
+    "uwb-indoor",
+    "uwb-industrial",
+    "radcom",
+    "deepmimo-los",
+    "deepmimo-beam",
+)
 DEFAULT_SEEDS = (0, 1, 2)
 DEFAULT_MODES = ("lp", "ft2", "lora", "strict")
 
@@ -218,6 +230,8 @@ def _build_data_paths(root: Path) -> dict:
         "uwb-indoor": root / "environment0.h5",
         "uwb-industrial": root / "ipin-train.h5",
         "radcom": root / "radcom.h5",
+        "deepmimo-los": root / "deepmimo.h5",
+        "deepmimo-beam": root / "deepmimo.h5",
     }
 
 
