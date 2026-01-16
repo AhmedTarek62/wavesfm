@@ -309,6 +309,9 @@ def main():
                 if task in SMOOTH_TASKS:
                     cmd += ["--smoothing", str(SMOOTH_TASKS[task])]
 
+                if task == "rfs":
+                    cmd.append("--class-weights")
+
                 pretty = " ".join(cmd)
                 print(f"[{mode.upper()}] MODEL={args.ckpt_name} TASK={task} SEED={seed}")
                 print(f"  RUN={run_name}")
