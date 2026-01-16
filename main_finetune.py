@@ -219,7 +219,7 @@ def main():
         layer_decay=args.layer_decay,
     )
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
-    scaler = torch.amp.GradScaler(device == "cuda")
+    scaler = torch.amp.GradScaler(device="cuda")
 
     steps_per_epoch = max(1, len(train_loader))
     total_steps = steps_per_epoch * args.epochs
