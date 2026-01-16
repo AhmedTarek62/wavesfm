@@ -5,7 +5,7 @@
 Lightweight fine-tuning utilities for multimodal wireless models across a range of downstream tasks.
 
 At a high level:
-1) preprocess raw datasets into a single cache file (per split) → 2) optionally download a pretrained checkpoint → 3) fine-tune/evaluate on a selected task.
+1) preprocess raw datasets into a single cache file (or split caches when a dataset provides official splits) → 2) optionally download a pretrained checkpoint → 3) fine-tune/evaluate on a selected task.
 
 ## Package overview
 - `main_finetune.py`: CLI entrypoint for training and evaluation.
@@ -41,6 +41,8 @@ Use the short name with `--task`:
 - `rml` — RadioML modulation classification (IQ).
 - `rfp` — Powder RF fingerprinting (IQ).
 - `interf` — Icarus interference detection (IQ).
+- `deepmimo-los` — DeepMIMO LoS/NLoS classification (vision-style CSI).
+- `deepmimo-beam` — DeepMIMO beam prediction (best beam index, default 64 beams).
 
 ## Data caches (what the code expects)
 Each task trains from a single cache file that stores samples + targets (and optional metadata like label names or class weights).
@@ -59,8 +61,8 @@ Train:
 ```bash
 python main_finetune.py \
   --task <task> \
-  --train-data <train.h5> \
-  --val-data <val.h5> \
+  --train-data <data.h5> \
+  --val-split 0.2 \
   --output-dir <run_dir>
 ```
 
@@ -68,10 +70,12 @@ Evaluate only:
 ```bash
 python main_finetune.py \
   --task <task> \
-  --train-data <train.h5> \
-  --val-data <val.h5> \
+  --train-data <data.h5> \
+  --val-split 0.2 \
   --eval-only
 ```
+
+If you have a dedicated validation cache, pass `--val-data <val.h5>` instead of `--val-split`.
 
 Common flags:
 - `--model`: model name from `models_vit.py` (shared across tasks).
@@ -79,6 +83,7 @@ Common flags:
 - `--resume`: resume training from a WavesFM checkpoint (model + optimizer + scheduler).
 - `--lora`: enable LoRA adapters (`--lora-rank`, `--lora-alpha`).
 - `--val-split`: auto-split if you don’t provide `--val-data`.
+- `--deepmimo-n-beams`: select DeepMIMO beam label variant (uses `label_beam_{n}`).
 
 Outputs:
 - logs: `output_dir/log.txt` (JSONL)
@@ -119,5 +124,7 @@ Some code is adapted from:
 - RML (modulation): `@article{10.1109/TWC.2023.3254490, author = {Sathyanarayanan, Venkatesh and Gerstoft, Peter and Gamal, Aly El}, title = {RML22: Realistic Dataset Generation for Wireless Modulation Classification}, journal = {Trans. Wireless. Comm.}, year = {2023}, volume = {22}, number = {11}, pages = {7663--7675}, doi = {10.1109/TWC.2023.3254490}}`
 - RF fingerprinting (Powder/RFP): `@inproceedings{reusmuns2019trust, title={Trust in 5G Open RANs through Machine Learning: RF Fingerprinting on the POWDER PAWR Platform}, author={Reus-Muns, Guillem and Jaisinghani, Dhertya and Sankhe, Kunal and Chowdhury, Kaushik}, booktitle={IEEE Globecom 2020-IEEE Global Communications Conference}, year={2020}, organization={IEEE}}`
 - Interference (Icarus): `@INPROCEEDINGS{10228929, author={Roy, Debashri and Chaudhury, Vini and Tassie, Chinenye and Spooner, Chad and Chowdhury, Kaushik}, booktitle={IEEE INFOCOM 2023 - IEEE Conference on Computer Communications}, title={ICARUS: Learning on IQ and Cycle Frequencies for Detecting Anomalous RF Underlay Signals}, year={2023}, pages={1-10}, doi={10.1109/INFOCOM53939.2023.10228929}}`
+- DeepMIMO (LWM): `@article{alikhani2024largewirelessmodellwm, title={Large Wireless Model (LWM): A Foundation Model for Wireless Channels}, author={Sadjad Alikhani and Gouranga Charan and Ahmed Alkhateeb}, year={2024}, journal={arXiv preprint arXiv:2411.08872}, url={https://arxiv.org/abs/2411.08872}, }`
+- DeepMIMO dataset: `@InProceedings{Alkhateeb2019, author = {Alkhateeb, A.}, title = {{DeepMIMO}: A Generic Deep Learning Dataset for Millimeter Wave and Massive {MIMO} Applications}, booktitle = {Proc. of Information Theory and Applications Workshop (ITA)}, year = {2019}, pages = {1-8}, month = {Feb}, Address = {San Diego, CA}, }`
 - UWB indoor: `@dataset{bregar2023uwb, title = {UWB Positioning and Tracking Data Set}, author = {Bregar, Klemen}, publisher = {Zenodo}, year = {2023}, doi = {10.5281/zenodo.7629141}}`
 - UWB industrial: https://cmutschler.de/datasets/channel-impulse-responses
