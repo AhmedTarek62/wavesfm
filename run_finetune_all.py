@@ -62,6 +62,8 @@ SMOOTH_TASKS = {"sensing": 0.1, "rfp": 0.1, "interf": 0.02, "rfs": 0.05}
 STRATIFIED_TASKS = {"rfs", "interf"}
 TASK_BATCH_SIZE = {
     "rml": 2048,
+    "uwb-indoor": 2048,
+    "radcom": 2048,
 }
 LORA_RANK = 32
 LORA_ALPHA = 32
