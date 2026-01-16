@@ -234,6 +234,7 @@ def _clone_repo(url: str, dest: Path) -> None:
         raise FileExistsError(f"Clone destination already exists and is not empty: {dest}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "clone", url, str(dest)], check=True)
+    subprocess.run(["git", "lfs", "pull"], check=True, cwd=str(dest))
 
 
 def parse_args() -> argparse.Namespace:
