@@ -65,6 +65,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-grad-norm", type=float, default=None, help="Gradient clipping (L2 norm).")
     p.add_argument("--class-weights", action="store_true", help="Use class weights for classification loss.")
 
+    # Dataset parameters
+    p.add_argument(
+        "--deepmimo-n-beams", type=int, default=64, help="Select DeepMIMO beam label variant (uses label_beam_{n}).",
+    )
+
     # IO
     p.add_argument("--output-dir", default="wavesfm_runs", help="Where to store checkpoints and logs.")
     p.add_argument("--save-every", type=int, default=10, help="Checkpoint frequency in epochs.")
@@ -147,6 +152,7 @@ def main():
         val_split=args.val_split,
         stratified_split=args.stratified_split,
         seed=args.seed,
+        deepmimo_n_beams=args.deepmimo_n_beams,
     )
     print(f"[data] task={args.task} train={len(train_ds)} val={len(val_ds)}")
 

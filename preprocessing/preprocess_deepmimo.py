@@ -144,10 +144,33 @@ def beam_labels(data: dict, scenario: str, n_beams: int, dataset_folder: str) ->
 
 
 def _channels_to_ri(channels: np.ndarray) -> np.ndarray:
-    arr = np.asarray(channels)[:, 0]
+    arr = np.asarray(channels)
+    if arr.ndim == 4 and arr.shape[1] == 1:
+        arr = arr[:, 0]
     if np.iscomplexobj(arr):
         return np.stack((arr.real, arr.imag), axis=1).astype(np.float32)
     return arr.astype(np.float32)
+
+
+def _sanitize_beam_labels(labels: np.ndarray, n_beams: int, scenario: str) -> np.ndarray:
+    labels = labels.astype(np.int64, copy=False)
+    if labels.size == 0:
+        return labels
+    max_label = labels.max()
+    min_label = labels.min()
+    if min_label < 0 or max_label >= n_beams:
+        print(
+            f"[warn] Beam labels out of range for {scenario}: "
+            f"min={min_label} max={max_label} expected [0, {n_beams - 1}]. Clipping."
+        )
+        labels = np.clip(labels, 0, n_beams - 1)
+    return labels
+
+
+def _beam_class_stats(labels: np.ndarray, n_beams: int) -> tuple[np.ndarray, np.ndarray]:
+    counts = np.bincount(labels, minlength=n_beams).astype(np.int64)
+    missing = np.where(counts == 0)[0]
+    return counts, missing
 
 
 def preprocess_deepmimo(
@@ -155,6 +178,8 @@ def preprocess_deepmimo(
     scenarios: Iterable[str],
     dataset_folder: str,
     n_beams: int = 64,
+    n_beams_list: Iterable[int] | None = None,
+    resize_size: int | None = 224,
     compression: str | None = None,
     overwrite: bool = False,
 ) -> Path:
@@ -166,31 +191,45 @@ def preprocess_deepmimo(
 
     samples: List[np.ndarray] = []
     los_labels: List[np.ndarray] = []
-    beam_labels_list: List[np.ndarray] = []
     scenario_labels: List[np.ndarray] = []
+
+    if n_beams_list is None:
+        beam_options = [int(n_beams)]
+    else:
+        beam_options = [int(v) for v in n_beams_list]
+        if int(n_beams) not in beam_options:
+            beam_options.append(int(n_beams))
+    beam_options = sorted(set(beam_options))
+
+    beam_label_map: dict[int, List[np.ndarray]] = {b: [] for b in beam_options}
 
     for scenario in scenarios:
         data = deepmimo_data_gen(scenario, dataset_folder)
         cleaned, idxs = deepmimo_data_cleaning(data)
         los = data["user"]["LoS"][idxs].astype(np.int64)
-        beams = beam_labels(data, scenario, n_beams, dataset_folder)[idxs].astype(np.int64)
         samples.append(_channels_to_ri(cleaned))
         los_labels.append(los)
-        beam_labels_list.append(beams)
+        for b in beam_options:
+            beams = beam_labels(data, scenario, b, dataset_folder)[idxs].astype(np.int64)
+            beams = _sanitize_beam_labels(beams, b, scenario)
+            beam_label_map[b].append(beams)
         scenario_labels.append(np.asarray([scenario] * len(los), dtype=object))
 
     sample_arr = np.concatenate(samples, axis=0)
     los_arr = np.concatenate(los_labels, axis=0)
-    beam_arr = np.concatenate(beam_labels_list, axis=0)
     scenario_arr = np.concatenate(scenario_labels, axis=0)
 
-    # Resize to 224x224 and compute channel-wise mean/std on resized data.
-    resized = F.interpolate(
-        torch.from_numpy(sample_arr),
-        size=(224, 224),
-        mode="bicubic",
-        align_corners=False,
-    ).numpy()
+    # Optionally resize before computing channel-wise mean/std.
+    if resize_size is not None:
+        resized = F.interpolate(
+            torch.from_numpy(sample_arr),
+            size=(resize_size, resize_size),
+            mode="bicubic",
+            align_corners=False,
+        ).numpy()
+    else:
+        resized = sample_arr
+
     mean = resized.mean(axis=(0, 2, 3), dtype=np.float64)
     std = resized.std(axis=(0, 2, 3), dtype=np.float64)
     std = np.clip(std, 1e-12, None)
@@ -210,24 +249,54 @@ def preprocess_deepmimo(
             compression=compression,
         )
         h5.create_dataset("label_los", shape=(n,), dtype="int64", chunks=(chunk,), compression=compression)
-        h5.create_dataset("label_beam", shape=(n,), dtype="int64", chunks=(chunk,), compression=compression)
+        for b in beam_options:
+            h5.create_dataset(
+                f"label_beam_{b}",
+                shape=(n,),
+                dtype="int64",
+                chunks=(chunk,),
+                compression=compression,
+            )
         h5.create_dataset("scenario", shape=(n,), dtype=str_dtype, chunks=(chunk,), compression=compression)
 
         h5["sample"][:] = sample_arr
         h5["label_los"][:] = los_arr
-        h5["label_beam"][:] = beam_arr
+        for b in beam_options:
+            h5[f"label_beam_{b}"][:] = np.concatenate(beam_label_map[b], axis=0)
         h5["scenario"][:] = scenario_arr
+
+        def _class_weights(labels: np.ndarray, n_classes: int) -> np.ndarray:
+            counts = np.bincount(labels, minlength=n_classes).astype(np.float64)
+            freq = counts / max(1, counts.sum())
+            weights = np.zeros_like(freq)
+            nonzero = freq > 0
+            weights[nonzero] = 1.0 / freq[nonzero]
+            weights = weights / weights.sum().clip(min=1e-8)
+            return weights.astype(np.float32)
 
         h5.attrs["scenarios"] = json.dumps(list(scenarios))
         h5.attrs["n_beams"] = int(n_beams)
+        h5.attrs["beam_options"] = json.dumps(beam_options)
         h5.attrs["sample_shape"] = json.dumps(list(sample_shape))
         h5.attrs["sample_format"] = "ri"
         h5.attrs["scale_factor"] = 1e6
         h5.attrs["mean"] = json.dumps([float(x) for x in mean])
         h5.attrs["std"] = json.dumps([float(x) for x in std])
         h5.attrs["labels_los"] = json.dumps(["NLoS", "LoS"])
+        h5.attrs["resize"] = resize_size if resize_size is not None else "none"
         h5.attrs["version"] = "v1"
         h5.attrs["dataset_folder"] = str(dataset_folder)
+        h5.attrs["class_weights_los"] = _class_weights(los_arr, 2)
+        for b in beam_options:
+            beam_arr = np.concatenate(beam_label_map[b], axis=0)
+            counts, missing = _beam_class_stats(beam_arr, b)
+            if missing.size > 0:
+                h5.attrs[f"missing_beams_{b}"] = json.dumps(missing.tolist())
+                print(f"[warn] Missing {missing.size} beam classes for n_beams={b}: {missing.tolist()}")
+            h5.attrs[f"beam_counts_{b}"] = json.dumps(counts.tolist())
+            effective = int(beam_arr.max() + 1) if beam_arr.size > 0 else int(b)
+            h5.attrs[f"effective_n_beams_{b}"] = int(effective)
+            h5.attrs[f"class_weights_beam_{b}"] = _class_weights(beam_arr, effective)
 
     return output
 
@@ -275,6 +344,22 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--n-beams", type=int, default=64, help="Number of beams for prediction labels.")
     p.add_argument(
+        "--n-beams-list",
+        default=None,
+        help="Comma-separated beam counts to store (e.g., 16,32,64).",
+    )
+    p.add_argument(
+        "--resize-size",
+        type=int,
+        default=224,
+        help="Resize H/W to this value (default: 224).",
+    )
+    p.add_argument(
+        "--no-resize",
+        action="store_true",
+        help="Disable resizing and keep original resolution.",
+    )
+    p.add_argument(
         "--compression",
         default="none",
         choices=["gzip", "lzf", "none"],
@@ -296,6 +381,8 @@ def main() -> None:
 
     comp = None if args.compression == "none" else args.compression
     dataset_folder = Path(args.dataset_folder)
+    resize_size = None if args.no_resize else args.resize_size
+    n_beams_list = _parse_csv_list(args.n_beams_list, int) if args.n_beams_list else None
     cloned = False
     try:
         if args.clone_scenarios:
@@ -306,6 +393,8 @@ def main() -> None:
             scenarios=scenario_list,
             dataset_folder=str(dataset_folder),
             n_beams=args.n_beams,
+            n_beams_list=n_beams_list,
+            resize_size=resize_size,
             compression=comp,
             overwrite=args.overwrite,
         )

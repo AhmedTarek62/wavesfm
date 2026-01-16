@@ -65,16 +65,12 @@ def _dataset_factory(task: str) -> Callable[[str | Path], Dataset]:
         return lambda p: Powder(p)
     if task == "interf":
         return lambda p: Icarus(p)
-    if task == "deepmimo-los":
-        return lambda p: DeepMIMO(p, label_key="label_los")
-    if task == "deepmimo-beam":
-        return lambda p: DeepMIMO(p, label_key="label_beam")
     raise ValueError(f"Unsupported task: {task}")
 
 
-def _load_class_weights(h5_path: Path) -> torch.Tensor | None:
+def _load_class_weights(h5_path: Path, attr_key: str = "class_weights") -> torch.Tensor | None:
     with h5py.File(h5_path, "r") as h5:
-        cw = h5.attrs.get("class_weights", None)
+        cw = h5.attrs.get(attr_key, None)
         if cw is None:
             return None
         return torch.as_tensor(cw, dtype=torch.float32)
@@ -145,9 +141,9 @@ def _infer_task_info(task: str, dataset: Dataset) -> TaskInfo:
             in_chans=2,
         )
     if task == "deepmimo-beam":
-        n_beams = dataset.n_beams
+        n_beams = getattr(dataset, "effective_n_beams", None) or getattr(dataset, "selected_n_beams", None)
         if not n_beams:
-            raise ValueError("DeepMIMO beam dataset missing n_beams attribute in h5.")
+            raise ValueError("DeepMIMO beam dataset missing selected n_beams.")
         return TaskInfo(
             name=task,
             modality="vision",
@@ -254,6 +250,7 @@ def build_datasets(
     val_split: float = 0.2,
     stratified_split: bool = False,
     seed: int = 42,
+    deepmimo_n_beams: int | None = None,
 ) -> Tuple[Dataset, Dataset, TaskInfo]:
     """
     Create train/val datasets for a given task using preprocessed HDF5 files only.
@@ -262,6 +259,17 @@ def build_datasets(
         raise ValueError(f"Task must be one of {SUPPORTED_TASKS}")
 
     factory = _dataset_factory(task)
+    if task.startswith("deepmimo-"):
+        return _build_deepmimo_datasets(
+            task=task,
+            train_path=train_path,
+            val_path=val_path,
+            val_split=val_split,
+            stratified_split=stratified_split,
+            seed=seed,
+            deepmimo_n_beams=deepmimo_n_beams,
+        )
+
     train_ds = factory(train_path)
     cw = _load_class_weights(Path(train_path))
     if cw is not None:
@@ -285,5 +293,45 @@ def build_datasets(
             train_size = max(1, len(train_ds) - val_size)
             gen = torch.Generator().manual_seed(seed + 1)
             train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
+
+    return train_ds, val_ds, info
+
+
+def _build_deepmimo_datasets(
+    task: str,
+    train_path: str | Path,
+    val_path: str | Path | None,
+    val_split: float,
+    stratified_split: bool,
+    seed: int,
+    deepmimo_n_beams: int | None,
+) -> Tuple[Dataset, Dataset, TaskInfo]:
+    if val_path:
+        raise ValueError("DeepMIMO uses val_split only; do not pass val_path.")
+    if task == "deepmimo-beam" and deepmimo_n_beams is None:
+        raise ValueError("deepmimo-beam requires --deepmimo-n-beams to select label_beam_{n}.")
+
+    if task == "deepmimo-beam":
+        train_ds = DeepMIMO(train_path, n_beams=deepmimo_n_beams, label_key="label_beam")
+        cw_key = f"class_weights_beam_{int(deepmimo_n_beams)}"
+    else:
+        train_ds = DeepMIMO(train_path, label_key="label_los")
+        cw_key = "class_weights_los"
+
+    cw = _load_class_weights(Path(train_path), attr_key=cw_key)
+    if cw is not None:
+        train_ds.class_weights = cw
+
+    info = _infer_task_info(task, train_ds)
+
+    if not 0 < val_split < 1:
+        raise ValueError("val_split must be in (0, 1) when val_path is omitted.")
+    if stratified_split and info.target_type == "classification":
+        train_ds, val_ds = _stratified_split(train_ds, val_split, seed)
+    else:
+        val_size = max(1, int(len(train_ds) * val_split))
+        train_size = max(1, len(train_ds) - val_size)
+        gen = torch.Generator().manual_seed(seed + 1)
+        train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
 
     return train_ds, val_ds, info

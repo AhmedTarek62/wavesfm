@@ -198,6 +198,12 @@ def parse_args():
         help="Use only the first N transformer blocks in the forward pass.",
     )
     p.add_argument(
+        "--deepmimo-n-beams",
+        type=int,
+        default=None,
+        help="Select DeepMIMO beam label variant (uses label_beam_{n}).",
+    )
+    p.add_argument(
         "--path-override",
         action="append",
         default=[],
@@ -319,6 +325,9 @@ def main():
 
                 if task == "interf":
                     cmd += ["--accum-steps", str(INTERF_ACCUM)]
+
+                if task == "deepmimo-beam" and args.deepmimo_n_beams is not None:
+                    cmd += ["--deepmimo-n-beams", str(args.deepmimo_n_beams)]
 
                 if task in SMOOTH_TASKS:
                     cmd += ["--smoothing", str(SMOOTH_TASKS[task])]

@@ -103,6 +103,8 @@ def evaluate_classification(
     device: torch.device,
     criterion: torch.nn.Module,
     num_outputs: int,
+    *,
+    compute_f1: bool = False,
 ) -> Dict[str, float]:
     model.eval()
     loss_meter = AverageMeter()
@@ -110,6 +112,7 @@ def evaluate_classification(
     acc3_meter = AverageMeter()
     per_class_correct = torch.zeros(num_outputs, device=device)
     per_class_total = torch.zeros(num_outputs, device=device)
+    per_class_pred = torch.zeros(num_outputs, device=device) if compute_f1 else None
 
     autocast_enabled = device.type == "cuda"
     for batch in data_loader:
@@ -132,6 +135,8 @@ def evaluate_classification(
             per_class_total[lbl] += 1
             if pred[i] == lbl:
                 per_class_correct[lbl] += 1
+            if per_class_pred is not None:
+                per_class_pred[pred[i]] += 1
 
     pca = torch.where(
         per_class_total > 0,
@@ -145,6 +150,24 @@ def evaluate_classification(
         "acc3": acc3_meter.avg,
         "pca": pca,
     }
+    if compute_f1 and per_class_pred is not None:
+        precision = torch.where(
+            per_class_pred > 0,
+            per_class_correct / per_class_pred,
+            torch.zeros_like(per_class_pred),
+        )
+        recall = torch.where(
+            per_class_total > 0,
+            per_class_correct / per_class_total,
+            torch.zeros_like(per_class_total),
+        )
+        denom = precision + recall
+        f1 = torch.where(denom > 0, 2 * precision * recall / denom, torch.zeros_like(denom))
+        if per_class_total.sum() > 0:
+            f1_macro = f1[per_class_total > 0].mean().item()
+        else:
+            f1_macro = 0.0
+        stats["f1_macro"] = f1_macro
     print(pretty_dict(stats, prefix="[val] "))
     return stats
 
@@ -407,7 +430,14 @@ def evaluate(
     if task_type == "classification" and task_name == "interf":
         return evaluate_interference(model, data_loader, device, criterion)
     if task_type == "classification":
-        return evaluate_classification(model, data_loader, device, criterion, num_outputs)
+        return evaluate_classification(
+            model,
+            data_loader,
+            device,
+            criterion,
+            num_outputs,
+            compute_f1=(task_name == "deepmimo-beam"),
+        )
     if task_type == "position":
         assert coord_min is not None and coord_max is not None, "coord_min/max required for position tasks"
         return evaluate_positioning(model, data_loader, device, criterion, coord_min, coord_max)
