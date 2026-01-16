@@ -105,6 +105,7 @@ def evaluate_classification(
     num_outputs: int,
     *,
     compute_f1: bool = False,
+    include_per_class: bool = False,
 ) -> Dict[str, float]:
     model.eval()
     loss_meter = AverageMeter()
@@ -150,6 +151,13 @@ def evaluate_classification(
         "acc3": acc3_meter.avg,
         "pca": pca,
     }
+    if include_per_class:
+        per_class_acc = torch.where(
+            per_class_total > 0,
+            per_class_correct / per_class_total * 100.0,
+            torch.zeros_like(per_class_total),
+        )
+        stats["per_class_acc"] = per_class_acc.tolist()
     if compute_f1 and per_class_pred is not None:
         precision = torch.where(
             per_class_pred > 0,
@@ -436,7 +444,8 @@ def evaluate(
             device,
             criterion,
             num_outputs,
-            compute_f1=(task_name == "deepmimo-beam"),
+            compute_f1=(task_name in {"deepmimo-beam", "deepmimo-los"}),
+            include_per_class=(task_name in {"deepmimo-beam", "deepmimo-los"}),
         )
     if task_type == "position":
         assert coord_min is not None and coord_max is not None, "coord_min/max required for position tasks"

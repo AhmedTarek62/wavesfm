@@ -258,7 +258,6 @@ def build_datasets(
     if task not in SUPPORTED_TASKS:
         raise ValueError(f"Task must be one of {SUPPORTED_TASKS}")
 
-    factory = _dataset_factory(task)
     if task.startswith("deepmimo-"):
         return _build_deepmimo_datasets(
             task=task,
@@ -270,6 +269,7 @@ def build_datasets(
             deepmimo_n_beams=deepmimo_n_beams,
         )
 
+    factory = _dataset_factory(task)
     train_ds = factory(train_path)
     cw = _load_class_weights(Path(train_path))
     if cw is not None:
@@ -306,8 +306,6 @@ def _build_deepmimo_datasets(
     seed: int,
     deepmimo_n_beams: int | None,
 ) -> Tuple[Dataset, Dataset, TaskInfo]:
-    if val_path:
-        raise ValueError("DeepMIMO uses val_split only; do not pass val_path.")
     if task == "deepmimo-beam" and deepmimo_n_beams is None:
         raise ValueError("deepmimo-beam requires --deepmimo-n-beams to select label_beam_{n}.")
 
@@ -324,14 +322,24 @@ def _build_deepmimo_datasets(
 
     info = _infer_task_info(task, train_ds)
 
-    if not 0 < val_split < 1:
-        raise ValueError("val_split must be in (0, 1) when val_path is omitted.")
-    if stratified_split and info.target_type == "classification":
-        train_ds, val_ds = _stratified_split(train_ds, val_split, seed)
+    if val_path:
+        if task == "deepmimo-beam":
+            val_ds = DeepMIMO(val_path, n_beams=deepmimo_n_beams, label_key="label_beam")
+        else:
+            val_ds = DeepMIMO(val_path, label_key="label_los")
+        if cw is None:
+            cw_val = _load_class_weights(Path(val_path), attr_key=cw_key)
+            if cw_val is not None:
+                train_ds.class_weights = cw_val
     else:
-        val_size = max(1, int(len(train_ds) * val_split))
-        train_size = max(1, len(train_ds) - val_size)
-        gen = torch.Generator().manual_seed(seed + 1)
-        train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
+        if not 0 < val_split < 1:
+            raise ValueError("val_split must be in (0, 1) when val_path is omitted.")
+        if stratified_split and info.target_type == "classification":
+            train_ds, val_ds = _stratified_split(train_ds, val_split, seed)
+        else:
+            val_size = max(1, int(len(train_ds) * val_split))
+            train_size = max(1, len(train_ds) - val_size)
+            gen = torch.Generator().manual_seed(seed + 1)
+            train_ds, val_ds = random_split(train_ds, [train_size, val_size], generator=gen)
 
     return train_ds, val_ds, info

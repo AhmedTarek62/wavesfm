@@ -395,7 +395,7 @@ def vit_multi_micro(**kwargs):
     """Tiny config to smoke-test end-to-end (fast)."""
     return ModalityAdapterViT(
         embed_dim=128, depth=4, num_heads=4, mlp_ratio=4.0,
-        vis_img_size=224, vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=8,
+        vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=8,
         iq_hop=kwargs["iq_segment_len"], **kwargs
     )
 
@@ -404,7 +404,7 @@ def vit_multi_small(**kwargs):
     """~8M params; good default."""
     return ModalityAdapterViT(
         embed_dim=256, depth=8, num_heads=8, mlp_ratio=4.0,
-        vis_img_size=224, vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=16,
+        vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=16,
         iq_hop=kwargs["iq_segment_len"], **kwargs
     )
 
@@ -412,7 +412,7 @@ def vit_multi_small(**kwargs):
 def vit_multi_base(**kwargs):
     return ModalityAdapterViT(
         embed_dim=512, depth=12, num_heads=8, mlp_ratio=4.0,
-        vis_img_size=224, vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=32,
+        vis_in_chans=1, iq_max_tokens=1024, iq_max_antennas=32,
         iq_hop=kwargs["iq_segment_len"], **kwargs
     )
 
@@ -420,6 +420,6 @@ def vit_multi_base(**kwargs):
 def vit_multi_large(**kwargs):
     return ModalityAdapterViT(
         embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.0,
-        vis_img_size=224, vis_in_chans=1, iq_max_tokens=256, iq_max_antennas=32,
+        vis_in_chans=1, iq_max_tokens=256, iq_max_antennas=32,
         iq_hop=kwargs["iq_segment_len"], **kwargs
     )

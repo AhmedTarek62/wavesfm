@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-alpha", type=float, default=1.0, help="LoRA alpha scaling (default: 1.0).")
     p.add_argument("--global-pool", default="token", choices=["token", "avg"])
     p.add_argument("--vis-patch", type=int, default=16, help="Vision patch size.")
+    p.add_argument("--vis-img-size", type=int, default=224, help="Vision input size (H=W).")
     p.add_argument("--iq-segment-len", type=int, default=16, help="Hop/segment length for IQ tokenization.")
     p.add_argument("--iq-downsample", type=str, default="none", choices=["none", "avg", "conv"])
     p.add_argument("--iq-target-len", type=int, default=256, help="Target IQ length after downsample.")
@@ -95,6 +96,7 @@ def build_model(args: argparse.Namespace, task_info) -> torch.nn.Module:
         modality=task_info.modality,
         global_pool=args.global_pool,
         num_outputs=task_info.num_outputs,
+        vis_img_size=args.vis_img_size,
         vis_patch=args.vis_patch,
         vis_in_chans_actual=task_info.in_chans,
         iq_segment_len=args.iq_segment_len,
