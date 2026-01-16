@@ -63,6 +63,7 @@ STRATIFIED_TASKS = {"rfs", "interf"}
 TASK_BATCH_SIZE = {
     "rml": 2048,
     "uwb-indoor": 2048,
+    "uwb-industrial": 1024,
     "radcom": 2048,
 }
 LORA_RANK = 32
