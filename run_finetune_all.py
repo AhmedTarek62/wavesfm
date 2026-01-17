@@ -79,7 +79,7 @@ TASK_BATCH_SIZE = {
     "radcom": 2048,
 }
 LORA_RANK = 32
-LORA_ALPHA = 32
+LORA_ALPHA = 64
 FT2_FROZEN_BLOCKS = 6
 INTERF_ACCUM = 2
 
@@ -200,8 +200,8 @@ def parse_args():
     p.add_argument(
         "--deepmimo-n-beams",
         type=int,
-        default=None,
-        help="Select DeepMIMO beam label variant (uses label_beam_{n}).",
+        default=64,
+        help="Select DeepMIMO beam label variant (uses label_beam_{n}); default 64 for beam runs.",
     )
     p.add_argument(
         "--path-override",
