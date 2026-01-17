@@ -332,7 +332,7 @@ def main():
                 if task in SMOOTH_TASKS:
                     cmd += ["--smoothing", str(SMOOTH_TASKS[task])]
 
-                if task == "rfs":
+                if task in STRATIFIED_TASKS:
                     cmd.append("--class-weights")
 
                 pretty = " ".join(cmd)
