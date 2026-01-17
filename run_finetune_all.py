@@ -200,7 +200,7 @@ def parse_args():
     p.add_argument(
         "--deepmimo-n-beams",
         type=int,
-        default=64,
+        default=16,
         help="Select DeepMIMO beam label variant (uses label_beam_{n}); default 64 for beam runs.",
     )
     p.add_argument(
