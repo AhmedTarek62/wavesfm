@@ -306,7 +306,7 @@ def main():
                     cmd += ["--val-split", str(args.val_split)]
 
                 if task in STRATIFIED_TASKS:
-                    cmd.append("--stratified-split")
+                    cmd += ["--stratified-split", "--class-weights"]
 
                 if args.trim_blocks is not None:
                     cmd += ["--trim-blocks", str(args.trim_blocks)]
@@ -332,11 +332,9 @@ def main():
                 if task in SMOOTH_TASKS:
                     cmd += ["--smoothing", str(SMOOTH_TASKS[task])]
 
-                if task in STRATIFIED_TASKS:
-                    cmd.append("--class-weights")
-
                 if task.startswith("deepmimo"):
-                    cmd.append("--vis-img-size 32")
+                    cmd += ["--vis-img-size", "32"]                    
+
 
                 pretty = " ".join(cmd)
                 print(f"[{mode.upper()}] MODEL={args.ckpt_name} TASK={task} SEED={seed}")
