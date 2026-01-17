@@ -71,7 +71,7 @@ if USE_CONDITIONAL_LN:
     COMMON_FLAGS.append("--use-conditional-ln")
 
 SMOOTH_TASKS = {"sensing": 0.1, "rfp": 0.1, "interf": 0.02, "rfs": 0.05}
-STRATIFIED_TASKS = {"rfs", "interf"}
+STRATIFIED_TASKS = {"rfs", "interf", "deepmimo-los", "deepmimo-beam"}
 TASK_BATCH_SIZE = {
     "rml": 2048,
     "uwb-indoor": 256,
@@ -334,6 +334,9 @@ def main():
 
                 if task in STRATIFIED_TASKS:
                     cmd.append("--class-weights")
+
+                if task.startswith("deepmimo"):
+                    cmd.append("--vis-img-size 32")
 
                 pretty = " ".join(cmd)
                 print(f"[{mode.upper()}] MODEL={args.ckpt_name} TASK={task} SEED={seed}")

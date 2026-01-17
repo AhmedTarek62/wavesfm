@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
 
     # Dataset parameters
     p.add_argument(
-        "--deepmimo-n-beams", type=int, default=64, help="Select DeepMIMO beam label variant (uses label_beam_{n}).",
+        "--deepmimo-n-beams", type=int, default=16, help="Select DeepMIMO beam label variant (uses label_beam_{n}).",
     )
 
     # IO
