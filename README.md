@@ -28,6 +28,8 @@ pip install -U pip
 # Install PyTorch for your CUDA version (see pytorch.org), then:
 pip install torch torchvision
 pip install -r requirements.txt
+# DeepMIMO preprocessing dependency (only needed for DeepMIMO tasks):
+pip install DeepMIMOv3
 ```
 
 ## Supported tasks
