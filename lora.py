@@ -6,6 +6,7 @@ Source: https://github.com/mnikitin/timm-vit-lora
 import torch
 from functools import partial
 from timm.models.vision_transformer import VisionTransformer
+import math
 
 
 class LoRALayer(torch.nn.Module):
@@ -18,7 +19,7 @@ class LoRALayer(torch.nn.Module):
         self.rank = rank
 
     def forward(self, x):
-        x = self.alpha / self.rank * (x @ self.A @ self.B)
+        x = self.alpha / math.sqrt(self.rank) * (x @ self.A @ self.B)
         return x
 
 
