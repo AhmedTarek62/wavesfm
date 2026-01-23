@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from timm.layers import trunc_normal_
 
 import models_vit
+from hub import download_pretrained
 from data import SUPPORTED_TASKS, build_datasets
 from lora import create_lora_model
 from engine import evaluate, train_one_epoch
@@ -77,6 +78,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--finetune", default="", help="Pretrained checkpoint to initialize from (loads model only).")
     p.add_argument("--resume", default="", help="Resume from checkpoint (model+optim+scheduler).")
     p.add_argument("--eval-only", action="store_true", help="Skip training and run a single validation pass.")
+    p.add_argument("--download-pretrained", action="store_true", help="Download a pretrained checkpoint from HF Hub.")
+    p.add_argument("--hf-repo", default="", help="HF repo id for pretrained weights (e.g., ahmedaboulfo/wavesfm).")
+    p.add_argument("--hf-file", default="", help="Checkpoint filename in the HF repo (e.g., wavesfm-v1p0.pth).")
 
     # Runtime
     p.add_argument("--device", default="cuda")
@@ -146,6 +150,18 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     logger = JsonlLogger(output_dir)
+
+    if args.download_pretrained and not args.finetune:
+        if not args.hf_repo or not args.hf_file:
+            raise ValueError("--download-pretrained requires --hf-repo and --hf-file")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_path = download_pretrained(
+            args.hf_repo,
+            filename=args.hf_file,
+            cache_dir=str(output_dir / "checkpoints"),
+        )
+        args.finetune = ckpt_path
+        print(f"[init] downloaded pretrained checkpoint to {ckpt_path}")
 
     set_seed(args.seed)
     cudnn.benchmark = True

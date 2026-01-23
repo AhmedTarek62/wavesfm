@@ -1,3 +1,12 @@
 .vscode
 __pycache__/
 *.pyc
+*.pth
+checkpoints/
+preprocessed/
+deepmimo.ipynb
+vis_preprocessed_data.ipynb
+runs/
+detailed_eval_outputs/
+scripts/
+deepmimo-*.ipynb
