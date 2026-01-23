@@ -105,10 +105,14 @@ def build_model(args: argparse.Namespace, task_info) -> torch.nn.Module:
         use_conditional_ln=args.use_conditional_ln,
     )
 
-    if args.lora:
-        model = create_lora_model(model, lora_rank=args.lora_rank, lora_alpha=args.lora_alpha)
-
     return model
+
+
+def _state_has_lora_keys(state: dict) -> bool:
+    for key in state.keys():
+        if ".attn.qkv.qkv." in key or ".attn.qkv.lora_" in key:
+            return True
+    return False
 
 
 def save_checkpoint(
@@ -176,10 +180,18 @@ def main():
     )
 
     model = build_model(args, task_info)
+    
+    finetune_state = None
+    finetune_has_lora = False
     if args.finetune:
         ckpt = torch.load(args.finetune, map_location="cpu", weights_only=False)
-        state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-        msg = model.load_state_dict(state, strict=False)
+        finetune_state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+        finetune_has_lora = _state_has_lora_keys(finetune_state)
+        if args.lora and finetune_has_lora:
+            model = create_lora_model(model, lora_rank=args.lora_rank, lora_alpha=args.lora_alpha)
+            msg = model.load_state_dict(finetune_state, strict=False)
+        else:
+            msg = model.load_state_dict(finetune_state, strict=False)
         print(f"[init] loaded finetune checkpoint {args.finetune}")
         print(msg)
         if hasattr(model, "head") and isinstance(model.head, torch.nn.Linear):
@@ -187,6 +199,9 @@ def main():
 
     if args.trim_blocks is not None:
         model = trim_blocks(model, args.trim_blocks)
+
+    if args.lora and not finetune_has_lora:
+        model = create_lora_model(model, lora_rank=args.lora_rank, lora_alpha=args.lora_alpha)
 
     freeze_encoder = args.freeze_encoder or not args.sl_baseline
     if freeze_encoder:
