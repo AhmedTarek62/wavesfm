@@ -1,9 +1,13 @@
-"""Precompute CSI sensing tensors with deterministic load/normalize/resize."""
+"""Precompute CSI sensing tensors with deterministic load/normalize/resize.
+
+Supports flat file layouts or class-subdir layouts. If the CLI data-path points to
+a dataset root that contains train/test (or train_amp/test_amp), samples from both
+splits are combined into a single cache.
+"""
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 from pathlib import Path
 
@@ -32,12 +36,60 @@ def _build_transform(img_size: int) -> Compose:
     )
 
 
-def _label_from_name(name: str) -> int:
-    match = re.match(r"([a-zA-Z]+)(\d+)", name)
-    if not match:
-        raise ValueError(f"Unexpected filename format (expected <label><index>): {name}")
-    label_name = match.group(1)
-    return LABELS.index(label_name)
+def _label_for_sample(path: Path) -> int:
+    stem = path.stem
+    match = re.match(r"([a-zA-Z]+)(\d+)", stem)
+    if match and match.group(1) in LABELS:
+        return LABELS.index(match.group(1))
+    parent = path.parent.name
+    if parent in LABELS:
+        return LABELS.index(parent)
+    raise ValueError(
+        f"Unexpected filename/parent format for label lookup: {path} "
+        "(expected <label><index>.mat or parent dir == label)"
+    )
+
+
+def _collect_samples(root_dir: Path) -> list[Path]:
+    if not root_dir.exists():
+        raise FileNotFoundError(f"Missing CSI sensing directory: {root_dir}")
+
+    direct = sorted(
+        path
+        for path in root_dir.iterdir()
+        if path.is_file() and path.suffix.lower() == ".mat"
+    )
+    if direct:
+        return direct
+
+    nested: list[Path] = []
+    for subdir in sorted(path for path in root_dir.iterdir() if path.is_dir()):
+        nested.extend(
+            sorted(
+                path
+                for path in subdir.iterdir()
+                if path.is_file() and path.suffix.lower() == ".mat"
+            )
+        )
+    if nested:
+        return nested
+
+    raise RuntimeError(f"No CSI sensing files found in {root_dir}")
+
+
+def _find_split_dirs(root_dir: Path) -> list[tuple[str, Path]]:
+    splits = []
+    for name in ("train_amp", "test_amp", "train", "test"):
+        path = root_dir / name
+        if path.is_dir():
+            splits.append((name, path))
+
+    amp_splits = [(name, path) for name, path in splits if name.endswith("_amp")]
+    if amp_splits:
+        return amp_splits
+
+    std_splits = [(name, path) for name, path in splits if name in ("train", "test")]
+    return std_splits
 
 
 def preprocess_csi_sensing(
@@ -47,6 +99,8 @@ def preprocess_csi_sensing(
     batch_size: int = 256,
     compression: str | None = None,
     overwrite: bool = False,
+    samples: list[Path] | None = None,
+    source_names: list[str] | None = None,
 ) -> Path:
     root_dir = Path(data_path)
     output = Path(output)
@@ -54,9 +108,13 @@ def preprocess_csi_sensing(
         raise FileExistsError(f"Output file already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    file_list = tuple(sorted(os.listdir(root_dir)))
-    if not file_list:
-        raise RuntimeError(f"No CSI sensing files found in {root_dir}")
+    if samples is None:
+        file_list = _collect_samples(root_dir)
+        source_names = [str(path.relative_to(root_dir)) for path in file_list]
+    else:
+        file_list = list(samples)
+        if source_names is None:
+            source_names = [path.name for path in file_list]
 
     transform = _build_transform(img_size)
     n = len(file_list)
@@ -95,27 +153,41 @@ def preprocess_csi_sensing(
 
         for start in tqdm(range(0, n, batch), desc="Caching CSI sensing", unit="batch"):
             end = min(start + batch, n)
-            batch_names = file_list[start:end]
+            batch_paths = file_list[start:end]
             csi_batch = []
             label_batch = []
-            for sample_name in batch_names:
-                csi = loadmat(root_dir / sample_name)["CSIamp"].reshape(3, 114, -1)
+            for sample_path in batch_paths:
+                csi = loadmat(sample_path)["CSIamp"].reshape(3, 114, -1)
                 csi = transform(csi)
-                label_index = _label_from_name(sample_name)
+                label_index = _label_for_sample(sample_path)
                 csi_batch.append(csi)
                 label_batch.append(label_index)
 
             dset[start:end] = torch.stack(csi_batch, dim=0).cpu().numpy()
             labels[start:end] = label_batch
-            src[start:end] = batch_names
+            src[start:end] = source_names[start:end]
 
     return output
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute CSI sensing tensors for fine-tuning/eval.")
-    p.add_argument("--data-path", required=True, help="Directory containing sensing CSI .mat files.")
-    p.add_argument("--output", required=True, help="Output path (e.g., data/csi_sensing_cache.h5).")
+    p.add_argument(
+        "--data-path",
+        required=True,
+        help=(
+            "Directory containing sensing CSI .mat files. Supports flat layouts, "
+            "class-subdir layouts, or a dataset root with train/test (or train_amp/test_amp) splits."
+        ),
+    )
+    p.add_argument(
+        "--output",
+        required=True,
+        help=(
+            "Output path (e.g., data/csi_sensing_cache.h5). When data-path is a dataset root with "
+            "splits, samples from all splits are combined into this single cache."
+        ),
+    )
     p.add_argument("--img-size", type=int, default=224, help="Resize target (default: 224).")
     p.add_argument("--batch-size", type=int, default=256, help="Chunk size for writes (default: 256).")
     p.add_argument(
@@ -131,15 +203,38 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     comp = None if args.compression == "none" else args.compression
-    out = preprocess_csi_sensing(
-        data_path=Path(args.data_path),
-        output=Path(args.output),
-        img_size=args.img_size,
-        batch_size=args.batch_size,
-        compression=comp,
-        overwrite=args.overwrite,
-    )
-    print(f"Wrote CSI sensing cache to {out}")
+    data_path = Path(args.data_path)
+    output = Path(args.output)
+    split_dirs = _find_split_dirs(data_path)
+
+    if split_dirs:
+        combined_samples: list[Path] = []
+        combined_sources: list[str] = []
+        for _, split_path in split_dirs:
+            split_samples = _collect_samples(split_path)
+            combined_samples.extend(split_samples)
+            combined_sources.extend([path.name for path in split_samples])
+        out = preprocess_csi_sensing(
+            data_path=data_path,
+            output=output,
+            img_size=args.img_size,
+            batch_size=args.batch_size,
+            compression=comp,
+            overwrite=args.overwrite,
+            samples=combined_samples,
+            source_names=combined_sources,
+        )
+        print(f"Wrote CSI sensing cache to {out}")
+    else:
+        out = preprocess_csi_sensing(
+            data_path=data_path,
+            output=output,
+            img_size=args.img_size,
+            batch_size=args.batch_size,
+            compression=comp,
+            overwrite=args.overwrite,
+        )
+        print(f"Wrote CSI sensing cache to {out}")
 
 
 if __name__ == "__main__":

@@ -77,6 +77,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--save-every", type=int, default=10, help="Checkpoint frequency in epochs.")
     p.add_argument("--finetune", default="", help="Pretrained checkpoint to initialize from (loads model only).")
     p.add_argument("--resume", default="", help="Resume from checkpoint (model+optim+scheduler).")
+    p.add_argument("--keep-head", action="store_true", help="Preserve classification head weights when loading --finetune.")
     p.add_argument("--eval-only", action="store_true", help="Skip training and run a single validation pass.")
     p.add_argument("--download-pretrained", action="store_true", help="Download a pretrained checkpoint from HF Hub.")
     p.add_argument("--hf-repo", default="", help="HF repo id for pretrained weights (e.g., ahmedaboulfo/wavesfm).")
@@ -210,7 +211,12 @@ def main():
             msg = model.load_state_dict(finetune_state, strict=False)
         print(f"[init] loaded finetune checkpoint {args.finetune}")
         print(msg)
-        if hasattr(model, "head") and isinstance(model.head, torch.nn.Linear):
+        if (
+            not args.eval_only
+            and not args.keep_head
+            and hasattr(model, "head")
+            and isinstance(model.head, torch.nn.Linear)
+        ):
             trunc_normal_(model.head.weight, std=2e-5)
 
     if args.trim_blocks is not None:
