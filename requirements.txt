@@ -8,4 +8,4 @@ pandas==2.3.3
 scipy==1.16.2
 pillow==11.3.0
 tqdm==4.67.1
-DeepMIMOv3
+DeepMIMOv3 # needed for DeepMIMO dataset preprocessing only
