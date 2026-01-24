@@ -1,4 +1,6 @@
-# Install PyTorch/torchvision separately for your CUDA version (see pytorch.org).
+# Default PyTorch version. For CUDA builds, install matching wheels from pytorch.org.
+torch==2.2.2
+torchvision==0.17.2
 timm==1.0.11
 h5py==3.14.0
 numpy==2.3.4
