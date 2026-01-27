@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 import h5py
@@ -68,7 +67,13 @@ def preprocess_positioning(
         raise FileExistsError(f"Output file already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    data_files = tuple(sorted(os.listdir(datapath)))
+    data_files = tuple(
+        sorted(
+            p.name
+            for p in datapath.iterdir()
+            if p.is_file() and p.suffix.lower() == ".mat"
+        )
+    )
     if not data_files:
         raise RuntimeError(f"No positioning files found in {datapath}")
 
@@ -76,15 +81,40 @@ def preprocess_positioning(
     coord_min = np.asarray(stats["coord_min"], dtype=np.float32)
     coord_max = np.asarray(stats["coord_max"], dtype=np.float32)
 
+    file_info = []
+    total_samples = 0
+    for fname in data_files:
+        path = datapath / fname
+        with h5py.File(path, "r") as f:
+            if "features" not in f or "labels" not in f or "position" not in f["labels"]:
+                raise KeyError(f"Missing 'features' or 'labels/position' in {path}")
+            feat_ds = f["features"]
+            pos_ds = f["labels"]["position"]
+            if pos_ds.ndim != 2 or pos_ds.shape[1] != 3:
+                raise ValueError(f"Expected positions (N, 3) in {path}, got {pos_ds.shape}.")
+            if feat_ds.ndim != 4:
+                raise ValueError(f"Expected features (N, C, H, W) in {path}, got {feat_ds.shape}.")
+            if feat_ds.shape[0] != pos_ds.shape[0]:
+                raise ValueError(
+                    f"Feature/position mismatch in {path}: {feat_ds.shape[0]} vs {pos_ds.shape[0]}"
+                )
+            sample_count = feat_ds.shape[0]
+        file_info.append({"path": path, "samples": sample_count})
+        total_samples += sample_count
+
+    if total_samples == 0:
+        raise RuntimeError(f"No positioning samples found in {datapath}")
+
     # Inspect first sample to size datasets.
-    with h5py.File(datapath / data_files[0], "r") as f0:
-        feat0 = f0["features"][:]
-        lbl0 = np.asarray(f0["position"], dtype=np.float32)
+    first = file_info[0]
+    with h5py.File(first["path"], "r") as f0:
+        feat0 = np.asarray(f0["features"][0])
+        lbl0 = np.asarray(f0["labels"]["position"][0], dtype=np.float32)
     feat0_t = transform(feat0)
     feature_shape = tuple(feat0_t.shape)
     label_shape = tuple(_norm_position(lbl0, coord_min, coord_max).shape)
 
-    n = len(data_files)
+    n = total_samples
     batch = max(1, int(batch_size))
     chunk = min(batch, n)
     with h5py.File(output, "w") as h5:
@@ -118,27 +148,40 @@ def preprocess_positioning(
         h5.attrs["std"] = json.dumps([float(x) for x in stats["std"]])
         h5.attrs["coord_nominal_min"] = json.dumps([float(x) for x in stats["coord_min"]])
         h5.attrs["coord_nominal_max"] = json.dumps([float(x) for x in stats["coord_max"]])
-        
-        for start in tqdm(range(0, n, batch), desc="Caching positioning", unit="batch"):
-            end = min(start + batch, n)
-            batch_files = data_files[start:end]
-            batch_len = len(batch_files)
-            feats = np.empty((batch_len, *feature_shape), dtype=np.float32)
-            labels = np.empty((batch_len, *label_shape), dtype=np.float32)
-            src_files = [""] * batch_len
 
-            for j, fname in enumerate(batch_files):
-                with h5py.File(datapath / fname, "r") as f:
-                    feat = f["features"][:]
-                    pos = np.asarray(f["position"], dtype=np.float32)
-                feat_t = transform(feat).numpy()
-                feats[j] = feat_t
-                labels[j] = _norm_position(pos, coord_min, coord_max)
-                src_files[j] = fname
+        offset = 0
+        with tqdm(total=n, desc="Caching positioning", unit="sample") as pbar:
+            for info in file_info:
+                with h5py.File(info["path"], "r") as f:
+                    feat_ds = f["features"]
+                    pos_ds = f["labels"]["position"]
+                    file_samples = info["samples"]
+                    for start in range(0, file_samples, batch):
+                        end = min(start + batch, file_samples)
+                        feat_batch = np.asarray(feat_ds[start:end])
+                        pos_batch = np.asarray(pos_ds[start:end], dtype=np.float32)
 
-            h5["features"][start:end] = feats
-            h5["label"][start:end] = labels
-            h5["source_file"][start:end] = src_files
+                        batch_len = feat_batch.shape[0]
+                        if pos_batch.shape[0] != batch_len:
+                            raise ValueError(
+                                f"Feature/position mismatch in {info['path']}: "
+                                f"{feat_batch.shape[0]} vs {pos_batch.shape[0]}"
+                            )
+
+                        feats = np.empty((batch_len, *feature_shape), dtype=np.float32)
+                        labels = np.empty((batch_len, *label_shape), dtype=np.float32)
+                        src_files = [info["path"].name] * batch_len
+
+                        for j in range(batch_len):
+                            feat_t = transform(feat_batch[j]).numpy()
+                            feats[j] = feat_t
+                            labels[j] = _norm_position(pos_batch[j], coord_min, coord_max)
+
+                        h5["features"][offset : offset + batch_len] = feats
+                        h5["label"][offset : offset + batch_len] = labels
+                        h5["source_file"][offset : offset + batch_len] = src_files
+                        offset += batch_len
+                        pbar.update(batch_len)
 
     return output
 
