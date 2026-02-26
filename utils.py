@@ -8,6 +8,15 @@ from typing import Tuple
 
 import torch
 
+EMBEDDING_PREFIXES = (
+    "patch_embed",
+    "vis_patch_embed",
+    "iq_segment_embed",
+    "iq_ant_embed",
+    "iq_downsampler",
+    "channel_adapter",
+)
+
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -52,24 +61,25 @@ def apply_lr(optimizer: torch.optim.Optimizer, lr: float) -> None:
         param_group["lr"] = lr * scale
 
 
-def get_layer_id_for_vit(name: str, num_layers: int) -> int:
+def get_layer_id_for_vit(name: str, num_layers: int, exclude_embed_from_layer_decay: bool = False) -> int:
     if name == "cls_token" or "pos_embed" in name:
         return 0
-    if name.startswith((
-        "patch_embed",
-        "vis_patch_embed",
-        "iq_segment_embed",
-        "iq_ant_embed",
-        "iq_downsampler",
-        "channel_adapter",
-    )):
+    if name.startswith(EMBEDDING_PREFIXES):
+        if exclude_embed_from_layer_decay:
+            return num_layers
         return 0
     if name.startswith("blocks"):
         return int(name.split(".")[1]) + 1
     return num_layers
 
 
-def param_groups_lrd(model, weight_decay=0.05, no_weight_decay_list=None, layer_decay=0.75):
+def param_groups_lrd(
+    model,
+    weight_decay=0.05,
+    no_weight_decay_list=None,
+    layer_decay=0.75,
+    exclude_embed_from_layer_decay: bool = False,
+):
     if no_weight_decay_list is None:
         no_weight_decay_list = []
 
@@ -94,7 +104,15 @@ def param_groups_lrd(model, weight_decay=0.05, no_weight_decay_list=None, layer_
             g_decay = "decay"
             this_decay = weight_decay
 
-        layer_id = get_layer_id_for_vit(name, num_layers) if num_layers > 0 else 0
+        layer_id = (
+            get_layer_id_for_vit(
+                name,
+                num_layers,
+                exclude_embed_from_layer_decay=exclude_embed_from_layer_decay,
+            )
+            if num_layers > 0
+            else 0
+        )
         group_name = f"layer_{layer_id}_{g_decay}"
 
         if group_name not in param_groups:
@@ -216,4 +234,3 @@ class JsonlLogger:
 
 def pretty_dict(d: dict, prefix: str = "") -> str:
     return prefix + " ".join(f"{k}={v:.4f}" if isinstance(v, (float, int)) else f"{k}={v}" for k, v in d.items())
-

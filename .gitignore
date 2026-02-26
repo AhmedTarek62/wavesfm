@@ -10,3 +10,4 @@ runs/
 detailed_eval_outputs/
 scripts/
 deepmimo-*.ipynb
+data/

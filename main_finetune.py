@@ -61,6 +61,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr", type=float, default=None, help="Absolute learning rate. If None, use blr scaling.")
     p.add_argument("--blr", type=float, default=1e-3, help="Base LR: lr = blr * batch_size * accum / 256.")
     p.add_argument("--layer-decay", type=float, default=0.75, help="Layer-wise LR decay (1.0 disables).")
+    p.add_argument(
+        "--no-layer-decay-embeddings",
+        action="store_true",
+        help="Exclude tokenizer/patch embedding layers from layer-wise LR decay (use base LR scale).",
+    )
     p.add_argument("--min-lr", type=float, default=1e-6, help="Cosine schedule floor.")
     p.add_argument("--warmup-epochs", type=float, default=5.0, help="Linear warmup duration (in epochs).")
     p.add_argument("--smoothing", type=float, default=0.0, help="Label smoothing for classification.")
@@ -262,6 +267,7 @@ def main():
         model,
         args.weight_decay,
         layer_decay=args.layer_decay,
+        exclude_embed_from_layer_decay=args.no_layer_decay_embeddings,
     )
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     scaler = torch.amp.GradScaler(device="cuda")

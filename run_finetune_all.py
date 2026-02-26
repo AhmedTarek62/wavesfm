@@ -18,6 +18,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from run_finetune_all_jepa import USE_CONDITIONAL_LN
+
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -60,15 +62,12 @@ MODEL_ARCH = "vit_multi_small"
 BATCH_SIZE = 256
 DEFAULT_NUM_WORKERS = 2
 WARMUP_EPOCHS = 5
-USE_CONDITIONAL_LN = True
 COMMON_FLAGS = [
     "--model",
     MODEL_ARCH,
     "--warmup-epochs",
     str(WARMUP_EPOCHS),
 ]
-if USE_CONDITIONAL_LN:
-    COMMON_FLAGS.append("--use-conditional-ln")
 
 SMOOTH_TASKS = {"sensing": 0.1, "rfp": 0.1, "interf": 0.02, "rfs": 0.05}
 STRATIFIED_TASKS = {"rfs", "interf", "deepmimo-los", "deepmimo-beam"}
@@ -191,6 +190,16 @@ def parse_args():
         choices=["lp", "ft2", "lora", "strict", "sl"],
         help="Finetune modes to run.",
     )
+
+    p.add_argument("--use-conditional-ln", action="store_true", help="Use conditional layer normalization.")
+
+    p.add_argument(
+        "--global-pool",
+        choices=('token', 'avg'),
+        default='token',
+        help="Global pooling method ('token', 'avg'). Default 'token'.",
+    )
+    
     p.add_argument(
         "--trim-blocks",
         type=int,
@@ -214,6 +223,11 @@ def parse_args():
         type=float,
         default=None,
         help="Override val split fraction when val data is not provided.",
+    )
+    p.add_argument(
+        "--no-layer-decay-embeddings",
+        action="store_true",
+        help="Exclude tokenizer/patch embedding layers from layer-wise LR decay.",
     )
     p.add_argument("--dry-run", action="store_true", help="Print commands only.")
     p.add_argument(
@@ -267,7 +281,9 @@ def main():
     _apply_overrides(data_paths, args.path_override)
     _validate_paths(data_paths, args.tasks, args.ckpt_path)
     args.output_root.mkdir(parents=True, exist_ok=True)
-
+    if args.use_conditional_ln:
+        COMMON_FLAGS.append("--use-conditional-ln")
+        
     for seed in args.seeds:
         for mode in args.modes:
             for task in args.tasks:
@@ -297,6 +313,8 @@ def main():
                     str(args.num_workers),
                     "--epochs",
                     str(epochs),
+                    "--global-pool",
+                    args.global_pool,
                     "--seed",
                     str(seed),
                     *COMMON_FLAGS,
@@ -310,6 +328,9 @@ def main():
 
                 if args.trim_blocks is not None:
                     cmd += ["--trim-blocks", str(args.trim_blocks)]
+
+                if args.no_layer_decay_embeddings:
+                    cmd.append("--no-layer-decay-embeddings")
 
                 if mode == "sl":
                     cmd.append("--sl-baseline")
