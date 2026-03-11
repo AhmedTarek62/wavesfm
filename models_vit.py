@@ -51,6 +51,7 @@ class ModalityAdapterViT(nn.Module):
         vis_in_chans: int = 1,              # channels PatchEmbed is initialized for (pretrain)
         vis_in_chans_actual: Optional[int] = None,  # task's actual channels; if differs, use 1x1 adapter
         channel_adapter_init: str = "avg",  # 'avg' | 'repeat' | 'zero' | 'rand'
+        native_patch_channels: bool = False,  # if True, rebuild patch embed with actual chans (latent-wfm style)
         # --- iq adapter ---
         iq_segment_len: int = 16,
         iq_hop: int = 16,
@@ -116,8 +117,12 @@ class ModalityAdapterViT(nn.Module):
             c_actual = int(vis_in_chans_actual) if vis_in_chans_actual is not None else int(vis_in_chans)
             self.channel_adapter = None
             if c_actual != self.vis_in_chans_pretrained:
-                self.channel_adapter = nn.Conv2d(c_actual, self.vis_in_chans_pretrained, kernel_size=1, bias=False)
-                self._init_channel_adapter(self.channel_adapter, init=channel_adapter_init)
+                if native_patch_channels:
+                    # latent-wfm style: rebuild patch embed with task channels; pretrained weights dropped
+                    self.vis_patch_embed = PatchEmbed(vis_img_size, vis_patch, c_actual, self.embed_dim)
+                else:
+                    self.channel_adapter = nn.Conv2d(c_actual, self.vis_in_chans_pretrained, kernel_size=1, bias=False)
+                    self._init_channel_adapter(self.channel_adapter, init=channel_adapter_init)
 
         # --- iq adapter ---
         if modality == 'iq':
@@ -290,8 +295,11 @@ class ModalityAdapterViT(nn.Module):
 
     # ------------------ encoder & head ------------------
     def forward_features(self, tok: torch.Tensor, token_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        cls = self.cls_token.expand(tok.size(0), 1, -1)
-        z = torch.cat([cls, tok], dim=1)     # (N,1+L,D)
+        if self.global_pool == 'token':
+            cls_tok = self.cls_token.expand(tok.size(0), 1, -1)
+            z = torch.cat([cls_tok, tok], dim=1)   # (N,1+L,D)
+        else:
+            z = tok                                 # (N,L,D) — no CLS
         z = self.norm_pre(z)
         # Apply conditional FiLM when enabled
         if getattr(self, 'use_conditional_ln', False):
@@ -310,7 +318,7 @@ class ModalityAdapterViT(nn.Module):
         if self.global_pool == 'token':
             pooled = z[:, 0]
         else:
-            feats = z[:, 1:, :]
+            feats = z                              # all positions are patch tokens; no CLS offset
             maskf = token_mask.to(feats.dtype).unsqueeze(-1)
             denom = maskf.sum(dim=1).clamp_min(1e-6)
             pooled = (feats * maskf).sum(dim=1) / denom

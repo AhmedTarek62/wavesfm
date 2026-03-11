@@ -1,11 +1,11 @@
 # Default PyTorch version. For CUDA builds, install matching wheels from pytorch.org.
-torch==2.2.2
-torchvision==0.17.2
+torch==2.9.1
+torchvision==0.24.1
 timm==1.0.11
-h5py==3.14.0
-numpy==2.3.4
+h5py==3.15.1
+numpy==2.3.3
 pandas==2.3.3
-scipy==1.16.2
+scipy==1.16.3
 pillow==11.3.0
 tqdm==4.67.1
 DeepMIMOv3 # needed for DeepMIMO dataset preprocessing only
