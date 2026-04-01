@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import h5py
+import numpy as np
 import torch
 from PIL import Image
 from torchvision.transforms import Compose, Grayscale, InterpolationMode, Normalize, Resize, ToTensor
@@ -77,6 +78,7 @@ def preprocess_rfs(
         h5.attrs["root"] = str(root_dir)
         h5.attrs["version"] = "v1"
 
+        all_labels = []
         for start in tqdm(range(0, n, batch), desc="Caching radio signals", unit="batch"):
             end = min(start + batch, n)
             batch_names = samples[start:end]
@@ -95,6 +97,13 @@ def preprocess_rfs(
             dset[start:end] = torch.stack(tensors, dim=0).numpy()
             labels[start:end] = label_batch
             src[start:end] = batch_names
+            all_labels.extend(label_batch)
+
+        counts  = np.bincount(all_labels, minlength=len(LABELS)).astype(np.float64)
+        freq    = counts / max(1, counts.sum())
+        weights = np.where(freq > 0, 1.0 / freq, 0.0)
+        weights = weights / weights.sum().clip(min=1e-8)
+        h5.attrs["class_weights"] = weights.astype(np.float32)
 
     return output
 
